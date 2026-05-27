@@ -18,14 +18,8 @@ struct Matrix4x4 {
 
 // 球の構造体
 struct Sphere {
-	Vector3 center; //!< 中心点
-	float radius;  //!< 半径
-};
-
-// 平面の構造体
-struct Plane {
-	Vector3 normal; //!< 法線
-	float distance; //!< 距離
+	Vector3 center; // 中心点
+	float radius;  // 半径
 };
 
 // ベクトルの加算
@@ -50,31 +44,9 @@ Vector3 Subtract(const Vector3& v1, const Vector3& v2) {
 	return result;
 }
 
-// ベクトルのスカラー倍
-Vector3 Multiply(float scalar, const Vector3& vector) {
-	Vector3 result{};
-
-	result.x = scalar * vector.x;
-	result.y = scalar * vector.y;
-	result.z = scalar * vector.z;
-
-	return result;
-}
-
 // ベクトルの内積
 float Dot(const Vector3& v1, const Vector3& v2) {
 	float result = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
-
-	return result;
-}
-
-// ベクトルのクロス積
-Vector3 Cross(const Vector3& v1, const Vector3& v2) {
-	Vector3 result{};
-
-	result.x = v1.y * v2.z - v1.z * v2.y;
-	result.y = v1.z * v2.x - v1.x * v2.z;
-	result.z = v1.x * v2.y - v1.y * v2.x;
 
 	return result;
 }
@@ -86,37 +58,11 @@ float Length(const Vector3& vector) {
 	return result;
 }
 
-// ベクトルの正規化
-Vector3 Normalize(const Vector3& vector) {
-	Vector3 result{};
+// 球と球の衝突判定
+bool IsCollision(const Sphere& s1, const Sphere& s2) {
+	float distance = Length(Subtract(s2.center, s1.center));
 
-	float length = Length(vector);
-
-	if (length != 0.0f) {
-		result.x = vector.x / length;
-		result.y = vector.y / length;
-		result.z = vector.z / length;
-	} else {
-		result.y = 1.0f;
-	}
-
-	return result;
-}
-
-// 垂直なベクトルを1つ求める
-Vector3 Perpendicular(const Vector3& vector) {
-	if (vector.x != 0.0f || vector.y != 0.0f) {
-		return { -vector.y, vector.x, 0.0f };
-	}
-
-	return { 0.0f, -vector.z, vector.y };
-}
-
-// 球と平面の衝突判定
-bool IsCollision(const Sphere& sphere, const Plane& plane) {
-	float distance = std::fabs(Dot(plane.normal, sphere.center) - plane.distance);
-
-	if (distance <= sphere.radius) {
+	if (distance <= s1.radius + s2.radius) {
 		return true;
 	}
 
@@ -402,7 +348,7 @@ void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, con
 	for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex) {
 		float lat = -pi / 2.0f + kLatEvery * latIndex; // 現在の緯度
 
-		// 経度の方向に分割 0 ～ 2pi
+		// 経度の方向に分割
 		for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {
 			float lon = lonIndex * kLonEvery; // 現在の経度
 
@@ -432,31 +378,6 @@ void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, con
 	}
 }
 
-// 平面の描画
-void DrawPlane(const Plane& plane, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
-	Vector3 center = Multiply(plane.distance, plane.normal); // 1
-
-	Vector3 perpendiculars[4]{};
-	perpendiculars[0] = Normalize(Perpendicular(plane.normal)); // 2
-	perpendiculars[1] = { -perpendiculars[0].x, -perpendiculars[0].y, -perpendiculars[0].z }; // 3
-	perpendiculars[2] = Cross(plane.normal, perpendiculars[0]); // 4
-	perpendiculars[3] = { -perpendiculars[2].x, -perpendiculars[2].y, -perpendiculars[2].z }; // 5
-
-	Vector3 points[4]{};
-
-	for (int32_t index = 0; index < 4; ++index) {
-		Vector3 extend = Multiply(2.0f, perpendiculars[index]);
-		Vector3 point = Add(center, extend);
-		points[index] = point;
-	}
-
-	// pointsをそれぞれ結んでDrawLineで矩形を描画する
-	DrawLine3D(points[0], points[2], viewProjectionMatrix, viewportMatrix, color);
-	DrawLine3D(points[2], points[1], viewProjectionMatrix, viewportMatrix, color);
-	DrawLine3D(points[1], points[3], viewProjectionMatrix, viewportMatrix, color);
-	DrawLine3D(points[3], points[0], viewProjectionMatrix, viewportMatrix, color);
-}
-
 const char kWindowTitle[] = "LC1C_14_コウケンリュウ";
 
 static const int kWindowWidth = 1280;
@@ -471,14 +392,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Vector3 cameraTranslate{ 0.0f, 1.9f, -6.49f };
 	Vector3 cameraRotate{ 0.26f, 0.0f, 0.0f };
 
-	Sphere sphere{
-		{ 0.12f, 0.49f, 0.0f },
-		0.6f
-	};
-
-	Plane plane{
-		{ 0.0f, 1.0f, 0.0f },
-		1.0f
+	Sphere spheres[2]{
+		{ { 0.0f, 0.0f, 0.54f }, 0.6f },
+		{ { 0.8f, 0.0f, 1.0f }, 0.4f },
 	};
 
 	// キー入力結果を受け取る箱
@@ -501,16 +417,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		ImGui::Begin("Window");
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("Sphere.Center", &sphere.center.x, 0.01f);
-		ImGui::DragFloat("Sphere.Radius", &sphere.radius, 0.01f);
-		ImGui::DragFloat3("Plane.Normal", &plane.normal.x, 0.01f);
-		ImGui::DragFloat("Plane.Distance", &plane.distance, 0.01f);
+		ImGui::DragFloat3("Sphere[0].Center", &spheres[0].center.x, 0.01f);
+		ImGui::DragFloat("Sphere[0].Radius", &spheres[0].radius, 0.01f);
+		ImGui::DragFloat3("Sphere[1].Center", &spheres[1].center.x, 0.01f);
+		ImGui::DragFloat("Sphere[1].Radius", &spheres[1].radius, 0.01f);
 		ImGui::End();
 
-		plane.normal = Normalize(plane.normal);
-
-		if (sphere.radius < 0.0f) {
-			sphere.radius = 0.0f;
+		for (int32_t index = 0; index < 2; ++index) {
+			if (spheres[index].radius < 0.0f) {
+				spheres[index].radius = 0.0f;
+			}
 		}
 
 		///
@@ -530,14 +446,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		Matrix4x4 viewportMatrix = MakeViewportMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
-		DrawPlane(plane, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
 
 		uint32_t sphereColor = 0xFFFFFFFF;
-		if (IsCollision(sphere, plane)) {
+		if (IsCollision(spheres[0], spheres[1])) {
 			sphereColor = 0xFF0000FF;
 		}
 
-		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, sphereColor);
+		DrawSphere(spheres[0], viewProjectionMatrix, viewportMatrix, sphereColor);
+		DrawSphere(spheres[1], viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
 
 		///
 		/// ↑描画処理ここまで
