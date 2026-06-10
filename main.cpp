@@ -16,6 +16,12 @@ struct Matrix4x4 {
 	float m[4][4];
 };
 
+// 球の構造体
+struct Sphere {
+	Vector3 center; // 中心点
+	float radius;  // 半径
+};
+
 // AABBの構造体
 struct AABB {
 	Vector3 min; // 最小点
@@ -44,6 +50,17 @@ Vector3 Subtract(const Vector3& v1, const Vector3& v2) {
 	return result;
 }
 
+// ベクトルのスカラー倍
+Vector3 Multiply(float scalar, const Vector3& vector) {
+	Vector3 result{};
+
+	result.x = scalar * vector.x;
+	result.y = scalar * vector.y;
+	result.z = scalar * vector.z;
+
+	return result;
+}
+
 // ベクトルの内積
 float Dot(const Vector3& v1, const Vector3& v2) {
 	float result = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
@@ -54,6 +71,21 @@ float Dot(const Vector3& v1, const Vector3& v2) {
 // ベクトルの長さ
 float Length(const Vector3& vector) {
 	float result = std::sqrt(Dot(vector, vector));
+
+	return result;
+}
+
+// 値を範囲内に収める
+float Clamp(float value, float min, float max) {
+	float result = value;
+
+	if (result < min) {
+		result = min;
+	}
+
+	if (result > max) {
+		result = max;
+	}
 
 	return result;
 }
@@ -89,14 +121,22 @@ AABB MakeCorrectAABB(const AABB& aabb) {
 	return result;
 }
 
-// AABBとAABBの衝突判定
-bool IsCollision(const AABB& aabb1, const AABB& aabb2) {
-	AABB a = MakeCorrectAABB(aabb1);
-	AABB b = MakeCorrectAABB(aabb2);
+// AABBと球の衝突判定
+bool IsCollision(const AABB& aabb, const Sphere& sphere) {
+	AABB correctAABB = MakeCorrectAABB(aabb);
 
-	if ((a.min.x <= b.max.x && a.max.x >= b.min.x) &&
-		(a.min.y <= b.max.y && a.max.y >= b.min.y) &&
-		(a.min.z <= b.max.z && a.max.z >= b.min.z)) {
+	// 最近接点を求める
+	Vector3 closestPoint{
+		Clamp(sphere.center.x, correctAABB.min.x, correctAABB.max.x),
+		Clamp(sphere.center.y, correctAABB.min.y, correctAABB.max.y),
+		Clamp(sphere.center.z, correctAABB.min.z, correctAABB.max.z),
+	};
+
+	// 最近接点と球の中心との距離を求める
+	float distance = Length(Subtract(closestPoint, sphere.center));
+
+	// 距離が半径よりも小さければ衝突
+	if (distance <= sphere.radius) {
 		return true;
 	}
 
@@ -371,6 +411,47 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 	}
 }
 
+// 球の描画
+void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	const float pi = 3.14159265358979323846f;
+	const uint32_t kSubdivision = 16;                 // 分割数
+	const float kLonEvery = 2.0f * pi / kSubdivision; // 経度分割1つ分の角度
+	const float kLatEvery = pi / kSubdivision;        // 緯度分割1つ分の角度
+
+	// 緯度の方向に分割
+	for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex) {
+		float lat = -pi / 2.0f + kLatEvery * latIndex; // 現在の緯度
+
+		// 経度の方向に分割
+		for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {
+			float lon = lonIndex * kLonEvery; // 現在の経度
+
+			// world座標系でのa,b,cを求める
+			Vector3 a{
+				sphere.center.x + sphere.radius * std::cos(lat) * std::cos(lon),
+				sphere.center.y + sphere.radius * std::sin(lat),
+				sphere.center.z + sphere.radius * std::cos(lat) * std::sin(lon)
+			};
+
+			Vector3 b{
+				sphere.center.x + sphere.radius * std::cos(lat + kLatEvery) * std::cos(lon),
+				sphere.center.y + sphere.radius * std::sin(lat + kLatEvery),
+				sphere.center.z + sphere.radius * std::cos(lat + kLatEvery) * std::sin(lon)
+			};
+
+			Vector3 c{
+				sphere.center.x + sphere.radius * std::cos(lat) * std::cos(lon + kLonEvery),
+				sphere.center.y + sphere.radius * std::sin(lat),
+				sphere.center.z + sphere.radius * std::cos(lat) * std::sin(lon + kLonEvery)
+			};
+
+			// ab,acで線を引く
+			DrawLine3D(a, b, viewProjectionMatrix, viewportMatrix, color);
+			DrawLine3D(a, c, viewProjectionMatrix, viewportMatrix, color);
+		}
+	}
+}
+
 // AABBの描画
 void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
 	AABB correctAABB = MakeCorrectAABB(aabb);
@@ -419,14 +500,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Vector3 cameraTranslate{ 0.0f, 1.9f, -6.49f };
 	Vector3 cameraRotate{ 0.26f, 0.0f, 0.0f };
 
-	AABB aabb1{
+	AABB aabb{
 		{ -0.5f, -0.5f, -0.5f },
 		{ 0.0f, 0.0f, 0.0f },
 	};
 
-	AABB aabb2{
-		{ 0.2f, 0.2f, 0.2f },
+	Sphere sphere{
 		{ 1.0f, 1.0f, 1.0f },
+		1.0f,
 	};
 
 	// キー入力結果を受け取る箱
@@ -449,11 +530,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		ImGui::Begin("Window");
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("aabb1.min", &aabb1.min.x, 0.01f);
-		ImGui::DragFloat3("aabb1.max", &aabb1.max.x, 0.01f);
-		ImGui::DragFloat3("aabb2.min", &aabb2.min.x, 0.01f);
-		ImGui::DragFloat3("aabb2.max", &aabb2.max.x, 0.01f);
+		ImGui::DragFloat3("aabb.min", &aabb.min.x, 0.01f);
+		ImGui::DragFloat3("aabb.max", &aabb.max.x, 0.01f);
+		ImGui::DragFloat3("sphere.center", &sphere.center.x, 0.01f);
+		ImGui::DragFloat("sphere.radius", &sphere.radius, 0.01f);
 		ImGui::End();
+
+		if (sphere.radius < 0.0f) {
+			sphere.radius = 0.0f;
+		}
 
 		///
 		/// ↑更新処理ここまで
@@ -471,13 +556,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		uint32_t aabb1Color = 0xFFFFFFFF;
-		if (IsCollision(aabb1, aabb2)) {
-			aabb1Color = 0xFF0000FF;
+		uint32_t sphereColor = 0xFFFFFFFF;
+		if (IsCollision(aabb, sphere)) {
+			sphereColor = 0xFF0000FF;
 		}
 
-		DrawAABB(aabb1, viewProjectionMatrix, viewportMatrix, aabb1Color);
-		DrawAABB(aabb2, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
+		DrawAABB(aabb, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
+		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, sphereColor);
 
 		///
 		/// ↑描画処理ここまで
