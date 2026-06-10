@@ -16,15 +16,10 @@ struct Matrix4x4 {
 	float m[4][4];
 };
 
-// 線分の構造体
-struct Segment {
-	Vector3 origin; // 始点
-	Vector3 diff;   // 終点への差分ベクトル
-};
-
-// 三角形の構造体
-struct Triangle {
-	Vector3 vertices[3]; // 頂点
+// AABBの構造体
+struct AABB {
+	Vector3 min; // 最小点
+	Vector3 max; // 最大点
 };
 
 // ベクトルの加算
@@ -49,31 +44,9 @@ Vector3 Subtract(const Vector3& v1, const Vector3& v2) {
 	return result;
 }
 
-// ベクトルのスカラー倍
-Vector3 Multiply(float scalar, const Vector3& vector) {
-	Vector3 result{};
-
-	result.x = scalar * vector.x;
-	result.y = scalar * vector.y;
-	result.z = scalar * vector.z;
-
-	return result;
-}
-
 // ベクトルの内積
 float Dot(const Vector3& v1, const Vector3& v2) {
 	float result = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
-
-	return result;
-}
-
-// ベクトルのクロス積
-Vector3 Cross(const Vector3& v1, const Vector3& v2) {
-	Vector3 result{};
-
-	result.x = v1.y * v2.z - v1.z * v2.y;
-	result.y = v1.z * v2.x - v1.x * v2.z;
-	result.z = v1.x * v2.y - v1.y * v2.x;
 
 	return result;
 }
@@ -85,69 +58,45 @@ float Length(const Vector3& vector) {
 	return result;
 }
 
-// ベクトルの正規化
-Vector3 Normalize(const Vector3& vector) {
-	Vector3 result{};
+// AABBのmin/maxを整える
+AABB MakeCorrectAABB(const AABB& aabb) {
+	AABB result{};
 
-	float length = Length(vector);
-
-	if (length != 0.0f) {
-		result.x = vector.x / length;
-		result.y = vector.y / length;
-		result.z = vector.z / length;
+	if (aabb.min.x <= aabb.max.x) {
+		result.min.x = aabb.min.x;
+		result.max.x = aabb.max.x;
 	} else {
-		result.y = 1.0f;
+		result.min.x = aabb.max.x;
+		result.max.x = aabb.min.x;
+	}
+
+	if (aabb.min.y <= aabb.max.y) {
+		result.min.y = aabb.min.y;
+		result.max.y = aabb.max.y;
+	} else {
+		result.min.y = aabb.max.y;
+		result.max.y = aabb.min.y;
+	}
+
+	if (aabb.min.z <= aabb.max.z) {
+		result.min.z = aabb.min.z;
+		result.max.z = aabb.max.z;
+	} else {
+		result.min.z = aabb.max.z;
+		result.max.z = aabb.min.z;
 	}
 
 	return result;
 }
 
-// 三角形と線分の衝突判定
-bool IsCollision(const Triangle& triangle, const Segment& segment) {
-	// 三角形の各辺を表すベクトルを求める
-	Vector3 v01 = Subtract(triangle.vertices[1], triangle.vertices[0]);
-	Vector3 v12 = Subtract(triangle.vertices[2], triangle.vertices[1]);
-	Vector3 v20 = Subtract(triangle.vertices[0], triangle.vertices[2]);
+// AABBとAABBの衝突判定
+bool IsCollision(const AABB& aabb1, const AABB& aabb2) {
+	AABB a = MakeCorrectAABB(aabb1);
+	AABB b = MakeCorrectAABB(aabb2);
 
-	// 三角形が存在する平面の法線を求める
-	Vector3 normal = Normalize(Cross(v01, v12));
-
-	// まず垂直判定を行うために、法線と線の内積を求める
-	float dot = Dot(normal, segment.diff);
-
-	// 垂直＝平行であるので、衝突しているはずがない
-	if (dot == 0.0f) {
-		return false;
-	}
-
-	// 三角形が存在する平面の距離を求める
-	float distance = Dot(triangle.vertices[0], normal);
-
-	// tを求める
-	float t = (distance - Dot(segment.origin, normal)) / dot;
-
-	// tの値が線分の範囲外なら衝突していない
-	if (t < 0.0f || 1.0f < t) {
-		return false;
-	}
-
-	// 衝突点を求める
-	Vector3 point = Add(segment.origin, Multiply(t, segment.diff));
-
-	// 各頂点から衝突点までのベクトルを求める
-	Vector3 v0p = Subtract(point, triangle.vertices[0]);
-	Vector3 v1p = Subtract(point, triangle.vertices[1]);
-	Vector3 v2p = Subtract(point, triangle.vertices[2]);
-
-	// 各辺を結んだベクトルと、頂点と衝突点を結んだベクトルのクロス積を取る
-	Vector3 cross01 = Cross(v01, v0p);
-	Vector3 cross12 = Cross(v12, v1p);
-	Vector3 cross20 = Cross(v20, v2p);
-
-	// すべての小三角形のクロス積と法線が同じ方向を向いていたら衝突
-	if (Dot(cross01, normal) >= 0.0f &&
-		Dot(cross12, normal) >= 0.0f &&
-		Dot(cross20, normal) >= 0.0f) {
+	if ((a.min.x <= b.max.x && a.max.x >= b.min.x) &&
+		(a.min.y <= b.max.y && a.max.y >= b.min.y) &&
+		(a.min.z <= b.max.z && a.max.z >= b.min.z)) {
 		return true;
 	}
 
@@ -422,31 +371,38 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 	}
 }
 
-// 三角形の描画
-void DrawTriangle(const Triangle& triangle, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
-	Vector3 screenVertices[3]{};
+// AABBの描画
+void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	AABB correctAABB = MakeCorrectAABB(aabb);
 
-	for (int32_t index = 0; index < 3; ++index) {
-		screenVertices[index] = Transform(Transform(triangle.vertices[index], viewProjectionMatrix), viewportMatrix);
-	}
+	Vector3 vertices[8]{
+		{ correctAABB.min.x, correctAABB.min.y, correctAABB.min.z },
+		{ correctAABB.max.x, correctAABB.min.y, correctAABB.min.z },
+		{ correctAABB.min.x, correctAABB.max.y, correctAABB.min.z },
+		{ correctAABB.max.x, correctAABB.max.y, correctAABB.min.z },
+		{ correctAABB.min.x, correctAABB.min.y, correctAABB.max.z },
+		{ correctAABB.max.x, correctAABB.min.y, correctAABB.max.z },
+		{ correctAABB.min.x, correctAABB.max.y, correctAABB.max.z },
+		{ correctAABB.max.x, correctAABB.max.y, correctAABB.max.z },
+	};
 
-	Novice::DrawTriangle(
-		int(screenVertices[0].x),
-		int(screenVertices[0].y),
-		int(screenVertices[1].x),
-		int(screenVertices[1].y),
-		int(screenVertices[2].x),
-		int(screenVertices[2].y),
-		color,
-		kFillModeWireFrame);
-}
+	// min.z側の面を描画する
+	DrawLine3D(vertices[0], vertices[1], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(vertices[1], vertices[3], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(vertices[3], vertices[2], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(vertices[2], vertices[0], viewProjectionMatrix, viewportMatrix, color);
 
-// 線分の描画
-void DrawSegment(const Segment& segment, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
-	Vector3 start = segment.origin;
-	Vector3 end = Add(segment.origin, segment.diff);
+	// max.z側の面を描画する
+	DrawLine3D(vertices[4], vertices[5], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(vertices[5], vertices[7], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(vertices[7], vertices[6], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(vertices[6], vertices[4], viewProjectionMatrix, viewportMatrix, color);
 
-	DrawLine3D(start, end, viewProjectionMatrix, viewportMatrix, color);
+	// 前後の面をつなぐ線を描画する
+	DrawLine3D(vertices[0], vertices[4], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(vertices[1], vertices[5], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(vertices[2], vertices[6], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(vertices[3], vertices[7], viewProjectionMatrix, viewportMatrix, color);
 }
 
 const char kWindowTitle[] = "LC1C_14_コウケンリュウ";
@@ -463,17 +419,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Vector3 cameraTranslate{ 0.0f, 1.9f, -6.49f };
 	Vector3 cameraRotate{ 0.26f, 0.0f, 0.0f };
 
-	Triangle triangle{
-		{
-			{ -1.0f, 0.0f, 0.0f },
-			{ 0.0f, 1.0f, 0.0f },
-			{ 1.0f, 0.0f, 0.0f },
-		}
+	AABB aabb1{
+		{ -0.5f, -0.5f, -0.5f },
+		{ 0.0f, 0.0f, 0.0f },
 	};
 
-	Segment segment{
-		{ 0.0f, 0.49f, -1.0f },
-		{ 0.0f, 0.5f, 2.0f },
+	AABB aabb2{
+		{ 0.2f, 0.2f, 0.2f },
+		{ 1.0f, 1.0f, 1.0f },
 	};
 
 	// キー入力結果を受け取る箱
@@ -496,11 +449,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		ImGui::Begin("Window");
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("Triangle.v0", &triangle.vertices[0].x, 0.01f);
-		ImGui::DragFloat3("Triangle.v1", &triangle.vertices[1].x, 0.01f);
-		ImGui::DragFloat3("Triangle.v2", &triangle.vertices[2].x, 0.01f);
-		ImGui::DragFloat3("Segment.Origin", &segment.origin.x, 0.01f);
-		ImGui::DragFloat3("Segment.Diff", &segment.diff.x, 0.01f);
+		ImGui::DragFloat3("aabb1.min", &aabb1.min.x, 0.01f);
+		ImGui::DragFloat3("aabb1.max", &aabb1.max.x, 0.01f);
+		ImGui::DragFloat3("aabb2.min", &aabb2.min.x, 0.01f);
+		ImGui::DragFloat3("aabb2.max", &aabb2.max.x, 0.01f);
 		ImGui::End();
 
 		///
@@ -518,14 +470,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		Matrix4x4 viewportMatrix = MakeViewportMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
-		DrawTriangle(triangle, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
 
-		uint32_t segmentColor = 0xFFFFFFFF;
-		if (IsCollision(triangle, segment)) {
-			segmentColor = 0xFF0000FF;
+		uint32_t aabb1Color = 0xFFFFFFFF;
+		if (IsCollision(aabb1, aabb2)) {
+			aabb1Color = 0xFF0000FF;
 		}
 
-		DrawSegment(segment, viewProjectionMatrix, viewportMatrix, segmentColor);
+		DrawAABB(aabb1, viewProjectionMatrix, viewportMatrix, aabb1Color);
+		DrawAABB(aabb2, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
 
 		///
 		/// ↑描画処理ここまで
