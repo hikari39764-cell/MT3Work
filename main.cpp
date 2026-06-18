@@ -16,16 +16,23 @@ struct Matrix4x4 {
 	float m[4][4];
 };
 
-// 線分の構造体
-struct Segment {
-	Vector3 origin; // 始点
-	Vector3 diff;   // 終点への差分ベクトル
+// 球の構造体
+struct Sphere {
+	Vector3 center; // 中心点
+	float radius;  // 半径
 };
 
 // AABBの構造体
 struct AABB {
 	Vector3 min; // 最小点
 	Vector3 max; // 最大点
+};
+
+// OBBの構造体
+struct OBB {
+	Vector3 center;          // 中心点
+	Vector3 orientations[3]; // 座標軸
+	Vector3 size;            // 座標軸方向の長さの半分
 };
 
 // ベクトルの加算
@@ -50,6 +57,17 @@ Vector3 Subtract(const Vector3& v1, const Vector3& v2) {
 	return result;
 }
 
+// ベクトルのスカラー倍
+Vector3 Multiply(float scalar, const Vector3& vector) {
+	Vector3 result{};
+
+	result.x = scalar * vector.x;
+	result.y = scalar * vector.y;
+	result.z = scalar * vector.z;
+
+	return result;
+}
+
 // ベクトルの内積
 float Dot(const Vector3& v1, const Vector3& v2) {
 	float result = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
@@ -64,22 +82,44 @@ float Length(const Vector3& vector) {
 	return result;
 }
 
-// 小さい方を返す
-float Min(float v1, float v2) {
-	if (v1 < v2) {
-		return v1;
+// ベクトルの正規化
+Vector3 Normalize(const Vector3& vector) {
+	Vector3 result{};
+
+	float length = Length(vector);
+
+	if (length != 0.0f) {
+		result.x = vector.x / length;
+		result.y = vector.y / length;
+		result.z = vector.z / length;
+	} else {
+		result.y = 1.0f;
 	}
 
-	return v2;
+	return result;
 }
 
-// 大きい方を返す
-float Max(float v1, float v2) {
-	if (v1 > v2) {
-		return v1;
+// 値を範囲内に収める
+float Clamp(float value, float min, float max) {
+	float result = value;
+
+	if (result < min) {
+		result = min;
 	}
 
-	return v2;
+	if (result > max) {
+		result = max;
+	}
+
+	return result;
+}
+
+// 度数法からラジアンへ変換
+float DegreeToRadian(float degree) {
+	const float pi = 3.14159265358979323846f;
+	float result = degree * pi / 180.0f;
+
+	return result;
 }
 
 // AABBのmin/maxを整える
@@ -113,60 +153,22 @@ AABB MakeCorrectAABB(const AABB& aabb) {
 	return result;
 }
 
-// AABBと線分の衝突判定
-bool IsCollision(const AABB& aabb, const Segment& segment) {
+// AABBと球の衝突判定
+bool IsCollision(const AABB& aabb, const Sphere& sphere) {
 	AABB correctAABB = MakeCorrectAABB(aabb);
 
-	float tMin = 0.0f;
-	float tMax = 1.0f;
+	// 最近接点を求める
+	Vector3 closestPoint{
+		Clamp(sphere.center.x, correctAABB.min.x, correctAABB.max.x),
+		Clamp(sphere.center.y, correctAABB.min.y, correctAABB.max.y),
+		Clamp(sphere.center.z, correctAABB.min.z, correctAABB.max.z),
+	};
 
-	// x軸の判定
-	if (segment.diff.x == 0.0f) {
-		if (segment.origin.x < correctAABB.min.x || correctAABB.max.x < segment.origin.x) {
-			return false;
-		}
-	} else {
-		float tx1 = (correctAABB.min.x - segment.origin.x) / segment.diff.x;
-		float tx2 = (correctAABB.max.x - segment.origin.x) / segment.diff.x;
-		float txNear = Min(tx1, tx2);
-		float txFar = Max(tx1, tx2);
+	// 最近接点と球の中心との距離を求める
+	float distance = Length(Subtract(closestPoint, sphere.center));
 
-		tMin = Max(tMin, txNear);
-		tMax = Min(tMax, txFar);
-	}
-
-	// y軸の判定
-	if (segment.diff.y == 0.0f) {
-		if (segment.origin.y < correctAABB.min.y || correctAABB.max.y < segment.origin.y) {
-			return false;
-		}
-	} else {
-		float ty1 = (correctAABB.min.y - segment.origin.y) / segment.diff.y;
-		float ty2 = (correctAABB.max.y - segment.origin.y) / segment.diff.y;
-		float tyNear = Min(ty1, ty2);
-		float tyFar = Max(ty1, ty2);
-
-		tMin = Max(tMin, tyNear);
-		tMax = Min(tMax, tyFar);
-	}
-
-	// z軸の判定
-	if (segment.diff.z == 0.0f) {
-		if (segment.origin.z < correctAABB.min.z || correctAABB.max.z < segment.origin.z) {
-			return false;
-		}
-	} else {
-		float tz1 = (correctAABB.min.z - segment.origin.z) / segment.diff.z;
-		float tz2 = (correctAABB.max.z - segment.origin.z) / segment.diff.z;
-		float tzNear = Min(tz1, tz2);
-		float tzFar = Max(tz1, tz2);
-
-		tMin = Max(tMin, tzNear);
-		tMax = Min(tMax, tzFar);
-	}
-
-	// 近い方が遠い方以下なら衝突
-	if (tMin <= tMax) {
+	// 距離が半径よりも小さければ衝突
+	if (distance <= sphere.radius) {
 		return true;
 	}
 
@@ -389,6 +391,56 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
+// OBBのWorldMatrixを作る
+Matrix4x4 MakeOBBWorldMatrix(const OBB& obb) {
+	Matrix4x4 result{};
+
+	result.m[0][0] = obb.orientations[0].x;
+	result.m[0][1] = obb.orientations[0].y;
+	result.m[0][2] = obb.orientations[0].z;
+
+	result.m[1][0] = obb.orientations[1].x;
+	result.m[1][1] = obb.orientations[1].y;
+	result.m[1][2] = obb.orientations[1].z;
+
+	result.m[2][0] = obb.orientations[2].x;
+	result.m[2][1] = obb.orientations[2].y;
+	result.m[2][2] = obb.orientations[2].z;
+
+	result.m[3][0] = obb.center.x;
+	result.m[3][1] = obb.center.y;
+	result.m[3][2] = obb.center.z;
+	result.m[3][3] = 1.0f;
+
+	return result;
+}
+
+// OBBと球の衝突判定
+bool IsCollision(const OBB& obb, const Sphere& sphere) {
+	Matrix4x4 obbWorldMatrix = MakeOBBWorldMatrix(obb);
+	Matrix4x4 obbWorldMatrixInverse = Inverse(obbWorldMatrix);
+
+	// 球の中心点をOBBのローカル空間に変換する
+	Vector3 centerInOBBLocalSpace = Transform(sphere.center, obbWorldMatrixInverse);
+
+	AABB aabbOBBLocal{
+		{ -obb.size.x, -obb.size.y, -obb.size.z },
+		{ obb.size.x, obb.size.y, obb.size.z },
+	};
+
+	Sphere sphereOBBLocal{
+		centerInOBBLocalSpace,
+		sphere.radius,
+	};
+
+	// ローカル空間で衝突判定
+	if (IsCollision(aabbOBBLocal, sphereOBBLocal)) {
+		return true;
+	}
+
+	return false;
+}
+
 // 線分の描画
 void DrawLine3D(const Vector3& start, const Vector3& end, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
 	Vector3 startScreen = Transform(Transform(start, viewProjectionMatrix), viewportMatrix);
@@ -441,46 +493,85 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 	}
 }
 
-// AABBの描画
-void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
-	AABB correctAABB = MakeCorrectAABB(aabb);
+// 球の描画
+void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	const float pi = 3.14159265358979323846f;
+	const uint32_t kSubdivision = 16;                 // 分割数
+	const float kLonEvery = 2.0f * pi / kSubdivision; // 経度分割1つ分の角度
+	const float kLatEvery = pi / kSubdivision;        // 緯度分割1つ分の角度
 
-	Vector3 vertices[8]{
-		{ correctAABB.min.x, correctAABB.min.y, correctAABB.min.z },
-		{ correctAABB.max.x, correctAABB.min.y, correctAABB.min.z },
-		{ correctAABB.min.x, correctAABB.max.y, correctAABB.min.z },
-		{ correctAABB.max.x, correctAABB.max.y, correctAABB.min.z },
-		{ correctAABB.min.x, correctAABB.min.y, correctAABB.max.z },
-		{ correctAABB.max.x, correctAABB.min.y, correctAABB.max.z },
-		{ correctAABB.min.x, correctAABB.max.y, correctAABB.max.z },
-		{ correctAABB.max.x, correctAABB.max.y, correctAABB.max.z },
-	};
+	// 緯度の方向に分割
+	for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex) {
+		float lat = -pi / 2.0f + kLatEvery * latIndex; // 現在の緯度
 
-	// min.z側の面を描画する
-	DrawLine3D(vertices[0], vertices[1], viewProjectionMatrix, viewportMatrix, color);
-	DrawLine3D(vertices[1], vertices[3], viewProjectionMatrix, viewportMatrix, color);
-	DrawLine3D(vertices[3], vertices[2], viewProjectionMatrix, viewportMatrix, color);
-	DrawLine3D(vertices[2], vertices[0], viewProjectionMatrix, viewportMatrix, color);
+		// 経度の方向に分割
+		for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {
+			float lon = lonIndex * kLonEvery; // 現在の経度
 
-	// max.z側の面を描画する
-	DrawLine3D(vertices[4], vertices[5], viewProjectionMatrix, viewportMatrix, color);
-	DrawLine3D(vertices[5], vertices[7], viewProjectionMatrix, viewportMatrix, color);
-	DrawLine3D(vertices[7], vertices[6], viewProjectionMatrix, viewportMatrix, color);
-	DrawLine3D(vertices[6], vertices[4], viewProjectionMatrix, viewportMatrix, color);
+			// world座標系でのa,b,cを求める
+			Vector3 a{
+				sphere.center.x + sphere.radius * std::cos(lat) * std::cos(lon),
+				sphere.center.y + sphere.radius * std::sin(lat),
+				sphere.center.z + sphere.radius * std::cos(lat) * std::sin(lon)
+			};
 
-	// 前後の面をつなぐ線を描画する
-	DrawLine3D(vertices[0], vertices[4], viewProjectionMatrix, viewportMatrix, color);
-	DrawLine3D(vertices[1], vertices[5], viewProjectionMatrix, viewportMatrix, color);
-	DrawLine3D(vertices[2], vertices[6], viewProjectionMatrix, viewportMatrix, color);
-	DrawLine3D(vertices[3], vertices[7], viewProjectionMatrix, viewportMatrix, color);
+			Vector3 b{
+				sphere.center.x + sphere.radius * std::cos(lat + kLatEvery) * std::cos(lon),
+				sphere.center.y + sphere.radius * std::sin(lat + kLatEvery),
+				sphere.center.z + sphere.radius * std::cos(lat + kLatEvery) * std::sin(lon)
+			};
+
+			Vector3 c{
+				sphere.center.x + sphere.radius * std::cos(lat) * std::cos(lon + kLonEvery),
+				sphere.center.y + sphere.radius * std::sin(lat),
+				sphere.center.z + sphere.radius * std::cos(lat) * std::sin(lon + kLonEvery)
+			};
+
+			// ab,acで線を引く
+			DrawLine3D(a, b, viewProjectionMatrix, viewportMatrix, color);
+			DrawLine3D(a, c, viewProjectionMatrix, viewportMatrix, color);
+		}
+	}
 }
 
-// 線分の描画
-void DrawSegment(const Segment& segment, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
-	Vector3 start = segment.origin;
-	Vector3 end = Add(segment.origin, segment.diff);
+// OBBの描画
+void DrawOBB(const OBB& obb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	Matrix4x4 obbWorldMatrix = MakeOBBWorldMatrix(obb);
 
-	DrawLine3D(start, end, viewProjectionMatrix, viewportMatrix, color);
+	Vector3 localVertices[8]{
+		{ -obb.size.x, -obb.size.y, -obb.size.z },
+		{ obb.size.x, -obb.size.y, -obb.size.z },
+		{ -obb.size.x, obb.size.y, -obb.size.z },
+		{ obb.size.x, obb.size.y, -obb.size.z },
+		{ -obb.size.x, -obb.size.y, obb.size.z },
+		{ obb.size.x, -obb.size.y, obb.size.z },
+		{ -obb.size.x, obb.size.y, obb.size.z },
+		{ obb.size.x, obb.size.y, obb.size.z },
+	};
+
+	Vector3 worldVertices[8]{};
+
+	for (int32_t index = 0; index < 8; ++index) {
+		worldVertices[index] = Transform(localVertices[index], obbWorldMatrix);
+	}
+
+	// -z側の面を描画する
+	DrawLine3D(worldVertices[0], worldVertices[1], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(worldVertices[1], worldVertices[3], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(worldVertices[3], worldVertices[2], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(worldVertices[2], worldVertices[0], viewProjectionMatrix, viewportMatrix, color);
+
+	// +z側の面を描画する
+	DrawLine3D(worldVertices[4], worldVertices[5], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(worldVertices[5], worldVertices[7], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(worldVertices[7], worldVertices[6], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(worldVertices[6], worldVertices[4], viewProjectionMatrix, viewportMatrix, color);
+
+	// 前後の面をつなぐ線を描画する
+	DrawLine3D(worldVertices[0], worldVertices[4], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(worldVertices[1], worldVertices[5], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(worldVertices[2], worldVertices[6], viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(worldVertices[3], worldVertices[7], viewProjectionMatrix, viewportMatrix, color);
 }
 
 const char kWindowTitle[] = "LC1C_14_コウケンリュウ";
@@ -497,14 +588,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Vector3 cameraTranslate{ 0.0f, 1.9f, -6.49f };
 	Vector3 cameraRotate{ 0.26f, 0.0f, 0.0f };
 
-	AABB aabb{
-		{ -0.5f, -0.5f, -0.5f },
+	Vector3 rotate{ 0.0f, 0.0f, 0.0f };
+
+	OBB obb{
+		{ -1.0f, 0.0f, 0.0f },
+		{
+			{ 1.0f, 0.0f, 0.0f },
+			{ 0.0f, 1.0f, 0.0f },
+			{ 0.0f, 0.0f, 1.0f },
+		},
 		{ 0.5f, 0.5f, 0.5f },
 	};
 
-	Segment segment{
-		{ -0.7f, 0.3f, 0.0f },
-		{ 2.0f, -0.5f, 0.0f },
+	Sphere sphere{
+		{ 0.0f, 0.0f, 0.0f },
+		0.5f,
 	};
 
 	// キー入力結果を受け取る箱
@@ -527,11 +625,61 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		ImGui::Begin("Window");
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("aabb.min", &aabb.min.x, 0.01f);
-		ImGui::DragFloat3("aabb.max", &aabb.max.x, 0.01f);
-		ImGui::DragFloat3("segment.origin", &segment.origin.x, 0.01f);
-		ImGui::DragFloat3("segment.diff", &segment.diff.x, 0.01f);
+		ImGui::DragFloat3("obb.center", &obb.center.x, 0.01f);
+		ImGui::DragFloat("rotateX", &rotate.x, 1.0f, -360.0f, 360.0f, "%.0f deg");
+		ImGui::DragFloat("rotateY", &rotate.y, 1.0f, -360.0f, 360.0f, "%.0f deg");
+		ImGui::DragFloat("rotateZ", &rotate.z, 1.0f, -360.0f, 360.0f, "%.0f deg");
+		ImGui::InputFloat3("obb.orientations[0]", &obb.orientations[0].x, "%.3f", ImGuiInputTextFlags_ReadOnly);
+		ImGui::InputFloat3("obb.orientations[1]", &obb.orientations[1].x, "%.3f", ImGuiInputTextFlags_ReadOnly);
+		ImGui::InputFloat3("obb.orientations[2]", &obb.orientations[2].x, "%.3f", ImGuiInputTextFlags_ReadOnly);
+		ImGui::DragFloat3("obb.size", &obb.size.x, 0.01f);
+		ImGui::DragFloat3("sphere.center", &sphere.center.x, 0.01f);
+		ImGui::DragFloat("sphere.radius", &sphere.radius, 0.01f);
 		ImGui::End();
+
+		Vector3 rotateRadian{
+			DegreeToRadian(rotate.x),
+			DegreeToRadian(rotate.y),
+			DegreeToRadian(rotate.z),
+		};
+
+		// 回転行列を生成
+		Matrix4x4 rotateMatrix = Multiply(
+			MakeRotateXMatrix(rotateRadian.x),
+			Multiply(MakeRotateYMatrix(rotateRadian.y), MakeRotateZMatrix(rotateRadian.z)));
+
+		// 回転行列から軸を抽出
+		obb.orientations[0].x = rotateMatrix.m[0][0];
+		obb.orientations[0].y = rotateMatrix.m[0][1];
+		obb.orientations[0].z = rotateMatrix.m[0][2];
+
+		obb.orientations[1].x = rotateMatrix.m[1][0];
+		obb.orientations[1].y = rotateMatrix.m[1][1];
+		obb.orientations[1].z = rotateMatrix.m[1][2];
+
+		obb.orientations[2].x = rotateMatrix.m[2][0];
+		obb.orientations[2].y = rotateMatrix.m[2][1];
+		obb.orientations[2].z = rotateMatrix.m[2][2];
+
+		for (int32_t index = 0; index < 3; ++index) {
+			obb.orientations[index] = Normalize(obb.orientations[index]);
+		}
+
+		if (obb.size.x < 0.0f) {
+			obb.size.x = 0.0f;
+		}
+
+		if (obb.size.y < 0.0f) {
+			obb.size.y = 0.0f;
+		}
+
+		if (obb.size.z < 0.0f) {
+			obb.size.z = 0.0f;
+		}
+
+		if (sphere.radius < 0.0f) {
+			sphere.radius = 0.0f;
+		}
 
 		///
 		/// ↑更新処理ここまで
@@ -549,13 +697,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		uint32_t color = 0xFFFFFFFF;
-		if (IsCollision(aabb, segment)) {
-			color = 0xFF0000FF;
+		uint32_t obbColor = 0xFFFFFFFF;
+		if (IsCollision(obb, sphere)) {
+			obbColor = 0xFF0000FF;
 		}
 
-		DrawAABB(aabb, viewProjectionMatrix, viewportMatrix, color);
-		DrawSegment(segment, viewProjectionMatrix, viewportMatrix, color);
+		DrawOBB(obb, viewProjectionMatrix, viewportMatrix, obbColor);
+		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
 
 		///
 		/// ↑描画処理ここまで
