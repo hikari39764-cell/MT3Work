@@ -16,30 +16,6 @@ struct Matrix4x4 {
 	float m[4][4];
 };
 
-// 直線の構造体
-struct Line {
-	Vector3 origin; // 始点
-	Vector3 diff;   // 終点への差分ベクトル
-};
-
-// 半直線の構造体
-struct Ray {
-	Vector3 origin; // 始点
-	Vector3 diff;   // 終点への差分ベクトル
-};
-
-// 線分の構造体
-struct Segment {
-	Vector3 origin; // 始点
-	Vector3 diff;   // 終点への差分ベクトル
-};
-
-// AABBの構造体
-struct AABB {
-	Vector3 min; // 最小点
-	Vector3 max; // 最大点
-};
-
 // OBBの構造体
 struct OBB {
 	Vector3 center;          // 中心点
@@ -87,6 +63,17 @@ float Dot(const Vector3& v1, const Vector3& v2) {
 	return result;
 }
 
+// ベクトルのクロス積
+Vector3 Cross(const Vector3& v1, const Vector3& v2) {
+	Vector3 result{};
+
+	result.x = v1.y * v2.z - v1.z * v2.y;
+	result.y = v1.z * v2.x - v1.x * v2.z;
+	result.z = v1.x * v2.y - v1.y * v2.x;
+
+	return result;
+}
+
 // ベクトルの長さ
 float Length(const Vector3& vector) {
 	float result = std::sqrt(Dot(vector, vector));
@@ -129,215 +116,85 @@ float Max(float v1, float v2) {
 	return v2;
 }
 
-// AABBのmin/maxを整える
-AABB MakeCorrectAABB(const AABB& aabb) {
-	AABB result{};
-
-	if (aabb.min.x <= aabb.max.x) {
-		result.min.x = aabb.min.x;
-		result.max.x = aabb.max.x;
-	} else {
-		result.min.x = aabb.max.x;
-		result.max.x = aabb.min.x;
+// 絶対値を返す
+float Abs(float value) {
+	if (value < 0.0f) {
+		return -value;
 	}
 
-	if (aabb.min.y <= aabb.max.y) {
-		result.min.y = aabb.min.y;
-		result.max.y = aabb.max.y;
-	} else {
-		result.min.y = aabb.max.y;
-		result.max.y = aabb.min.y;
-	}
+	return value;
+}
 
-	if (aabb.min.z <= aabb.max.z) {
-		result.min.z = aabb.min.z;
-		result.max.z = aabb.max.z;
-	} else {
-		result.min.z = aabb.max.z;
-		result.max.z = aabb.min.z;
-	}
+// 度数法からラジアンへ変換
+float DegreeToRadian(float degree) {
+	const float pi = 3.14159265358979323846f;
+	float result = degree * pi / 180.0f;
 
 	return result;
 }
 
-// AABBと線分の衝突判定
-bool IsCollision(const AABB& aabb, const Segment& segment) {
-	AABB correctAABB = MakeCorrectAABB(aabb);
+// OBBを分離軸へ射影した半径を求める
+float ProjectOBBLength(const OBB& obb, const Vector3& axis) {
+	float result = 0.0f;
 
-	float tMin = 0.0f;
-	float tMax = 1.0f;
+	result += obb.size.x * Abs(Dot(obb.orientations[0], axis));
+	result += obb.size.y * Abs(Dot(obb.orientations[1], axis));
+	result += obb.size.z * Abs(Dot(obb.orientations[2], axis));
 
-	// x軸の判定
-	if (segment.diff.x == 0.0f) {
-		if (segment.origin.x < correctAABB.min.x || correctAABB.max.x < segment.origin.x) {
-			return false;
-		}
-	} else {
-		float tx1 = (correctAABB.min.x - segment.origin.x) / segment.diff.x;
-		float tx2 = (correctAABB.max.x - segment.origin.x) / segment.diff.x;
-		float txNear = Min(tx1, tx2);
-		float txFar = Max(tx1, tx2);
+	return result;
+}
 
-		tMin = Max(tMin, txNear);
-		tMax = Min(tMax, txFar);
+// 指定した軸で分離しているか
+bool IsSeparatedAxis(const OBB& obb1, const OBB& obb2, const Vector3& axis) {
+	Vector3 normal = Normalize(axis);
+
+	// 軸が作れない場合は分離軸として使わない
+	if (Length(axis) <= 0.000001f) {
+		return false;
 	}
 
-	// y軸の判定
-	if (segment.diff.y == 0.0f) {
-		if (segment.origin.y < correctAABB.min.y || correctAABB.max.y < segment.origin.y) {
-			return false;
-		}
-	} else {
-		float ty1 = (correctAABB.min.y - segment.origin.y) / segment.diff.y;
-		float ty2 = (correctAABB.max.y - segment.origin.y) / segment.diff.y;
-		float tyNear = Min(ty1, ty2);
-		float tyFar = Max(ty1, ty2);
+	float distance = Abs(Dot(Subtract(obb2.center, obb1.center), normal));
+	float radius1 = ProjectOBBLength(obb1, normal);
+	float radius2 = ProjectOBBLength(obb2, normal);
 
-		tMin = Max(tMin, tyNear);
-		tMax = Min(tMax, tyFar);
-	}
-
-	// z軸の判定
-	if (segment.diff.z == 0.0f) {
-		if (segment.origin.z < correctAABB.min.z || correctAABB.max.z < segment.origin.z) {
-			return false;
-		}
-	} else {
-		float tz1 = (correctAABB.min.z - segment.origin.z) / segment.diff.z;
-		float tz2 = (correctAABB.max.z - segment.origin.z) / segment.diff.z;
-		float tzNear = Min(tz1, tz2);
-		float tzFar = Max(tz1, tz2);
-
-		tMin = Max(tMin, tzNear);
-		tMax = Min(tMax, tzFar);
-	}
-
-	// 近い方が遠い方以下なら衝突
-	if (tMin <= tMax) {
+	// 影の長さの合計より中心間の距離が長ければ分離している
+	if (radius1 + radius2 < distance) {
 		return true;
 	}
 
 	return false;
 }
 
-// AABBと半直線の衝突判定
-bool IsCollision(const AABB& aabb, const Ray& ray) {
-	AABB correctAABB = MakeCorrectAABB(aabb);
+// OBBとOBBの衝突判定
+bool IsCollision(const OBB& obb1, const OBB& obb2) {
+	Vector3 axes[15]{};
 
-	float tMin = 0.0f;
-	float tMax = 100000.0f;
+	// 面法線を分離軸候補にする
+	axes[0] = obb1.orientations[0];
+	axes[1] = obb1.orientations[1];
+	axes[2] = obb1.orientations[2];
+	axes[3] = obb2.orientations[0];
+	axes[4] = obb2.orientations[1];
+	axes[5] = obb2.orientations[2];
 
-	// x軸の判定
-	if (ray.diff.x == 0.0f) {
-		if (ray.origin.x < correctAABB.min.x || correctAABB.max.x < ray.origin.x) {
+	// 各辺の組み合わせのクロス積を分離軸候補にする
+	int32_t index = 6;
+
+	for (int32_t i = 0; i < 3; ++i) {
+		for (int32_t j = 0; j < 3; ++j) {
+			axes[index] = Cross(obb1.orientations[i], obb2.orientations[j]);
+			++index;
+		}
+	}
+
+	// 1つでも分離している軸があれば衝突していない
+	for (int32_t i = 0; i < 15; ++i) {
+		if (IsSeparatedAxis(obb1, obb2, axes[i])) {
 			return false;
 		}
-	} else {
-		float tx1 = (correctAABB.min.x - ray.origin.x) / ray.diff.x;
-		float tx2 = (correctAABB.max.x - ray.origin.x) / ray.diff.x;
-		float txNear = Min(tx1, tx2);
-		float txFar = Max(tx1, tx2);
-
-		tMin = Max(tMin, txNear);
-		tMax = Min(tMax, txFar);
 	}
 
-	// y軸の判定
-	if (ray.diff.y == 0.0f) {
-		if (ray.origin.y < correctAABB.min.y || correctAABB.max.y < ray.origin.y) {
-			return false;
-		}
-	} else {
-		float ty1 = (correctAABB.min.y - ray.origin.y) / ray.diff.y;
-		float ty2 = (correctAABB.max.y - ray.origin.y) / ray.diff.y;
-		float tyNear = Min(ty1, ty2);
-		float tyFar = Max(ty1, ty2);
-
-		tMin = Max(tMin, tyNear);
-		tMax = Min(tMax, tyFar);
-	}
-
-	// z軸の判定
-	if (ray.diff.z == 0.0f) {
-		if (ray.origin.z < correctAABB.min.z || correctAABB.max.z < ray.origin.z) {
-			return false;
-		}
-	} else {
-		float tz1 = (correctAABB.min.z - ray.origin.z) / ray.diff.z;
-		float tz2 = (correctAABB.max.z - ray.origin.z) / ray.diff.z;
-		float tzNear = Min(tz1, tz2);
-		float tzFar = Max(tz1, tz2);
-
-		tMin = Max(tMin, tzNear);
-		tMax = Min(tMax, tzFar);
-	}
-
-	// 近い方が遠い方以下なら衝突
-	if (tMin <= tMax) {
-		return true;
-	}
-
-	return false;
-}
-
-// AABBと直線の衝突判定
-bool IsCollision(const AABB& aabb, const Line& line) {
-	AABB correctAABB = MakeCorrectAABB(aabb);
-
-	float tMin = -100000.0f;
-	float tMax = 100000.0f;
-
-	// x軸の判定
-	if (line.diff.x == 0.0f) {
-		if (line.origin.x < correctAABB.min.x || correctAABB.max.x < line.origin.x) {
-			return false;
-		}
-	} else {
-		float tx1 = (correctAABB.min.x - line.origin.x) / line.diff.x;
-		float tx2 = (correctAABB.max.x - line.origin.x) / line.diff.x;
-		float txNear = Min(tx1, tx2);
-		float txFar = Max(tx1, tx2);
-
-		tMin = Max(tMin, txNear);
-		tMax = Min(tMax, txFar);
-	}
-
-	// y軸の判定
-	if (line.diff.y == 0.0f) {
-		if (line.origin.y < correctAABB.min.y || correctAABB.max.y < line.origin.y) {
-			return false;
-		}
-	} else {
-		float ty1 = (correctAABB.min.y - line.origin.y) / line.diff.y;
-		float ty2 = (correctAABB.max.y - line.origin.y) / line.diff.y;
-		float tyNear = Min(ty1, ty2);
-		float tyFar = Max(ty1, ty2);
-
-		tMin = Max(tMin, tyNear);
-		tMax = Min(tMax, tyFar);
-	}
-
-	// z軸の判定
-	if (line.diff.z == 0.0f) {
-		if (line.origin.z < correctAABB.min.z || correctAABB.max.z < line.origin.z) {
-			return false;
-		}
-	} else {
-		float tz1 = (correctAABB.min.z - line.origin.z) / line.diff.z;
-		float tz2 = (correctAABB.max.z - line.origin.z) / line.diff.z;
-		float tzNear = Min(tz1, tz2);
-		float tzFar = Max(tz1, tz2);
-
-		tMin = Max(tMin, tzNear);
-		tMax = Min(tMax, tzFar);
-	}
-
-	// 近い方が遠い方以下なら衝突
-	if (tMin <= tMax) {
-		return true;
-	}
-
-	return false;
+	return true;
 }
 
 // 行列の積
@@ -556,14 +413,6 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
-// 度数法からラジアンへ変換
-float DegreeToRadian(float degree) {
-	const float pi = 3.14159265358979323846f;
-	float result = degree * pi / 180.0f;
-
-	return result;
-}
-
 // OBBのWorldMatrixを作る
 Matrix4x4 MakeOBBWorldMatrix(const OBB& obb) {
 	Matrix4x4 result{};
@@ -586,84 +435,6 @@ Matrix4x4 MakeOBBWorldMatrix(const OBB& obb) {
 	result.m[3][3] = 1.0f;
 
 	return result;
-}
-
-// OBBと線分の衝突判定
-bool IsCollision(const Segment& segment, const OBB& obb) {
-	Matrix4x4 obbWorldMatrix = MakeOBBWorldMatrix(obb);
-	Matrix4x4 obbInverse = Inverse(obbWorldMatrix);
-
-	// 線分をOBBのローカル空間へ変換する
-	Vector3 localOrigin = Transform(segment.origin, obbInverse);
-	Vector3 localEnd = Transform(Add(segment.origin, segment.diff), obbInverse);
-
-	AABB localAABB{
-		{ -obb.size.x, -obb.size.y, -obb.size.z },
-		{ obb.size.x, obb.size.y, obb.size.z },
-	};
-
-	Segment localSegment{};
-	localSegment.origin = localOrigin;
-	localSegment.diff = Subtract(localEnd, localOrigin);
-
-	// ローカル空間で衝突判定
-	if (IsCollision(localAABB, localSegment)) {
-		return true;
-	}
-
-	return false;
-}
-
-// OBBと半直線の衝突判定
-bool IsCollision(const Ray& ray, const OBB& obb) {
-	Matrix4x4 obbWorldMatrix = MakeOBBWorldMatrix(obb);
-	Matrix4x4 obbInverse = Inverse(obbWorldMatrix);
-
-	// 半直線をOBBのローカル空間へ変換する
-	Vector3 localOrigin = Transform(ray.origin, obbInverse);
-	Vector3 localEnd = Transform(Add(ray.origin, ray.diff), obbInverse);
-
-	AABB localAABB{
-		{ -obb.size.x, -obb.size.y, -obb.size.z },
-		{ obb.size.x, obb.size.y, obb.size.z },
-	};
-
-	Ray localRay{};
-	localRay.origin = localOrigin;
-	localRay.diff = Subtract(localEnd, localOrigin);
-
-	// ローカル空間で衝突判定
-	if (IsCollision(localAABB, localRay)) {
-		return true;
-	}
-
-	return false;
-}
-
-// OBBと直線の衝突判定
-bool IsCollision(const Line& line, const OBB& obb) {
-	Matrix4x4 obbWorldMatrix = MakeOBBWorldMatrix(obb);
-	Matrix4x4 obbInverse = Inverse(obbWorldMatrix);
-
-	// 直線をOBBのローカル空間へ変換する
-	Vector3 localOrigin = Transform(line.origin, obbInverse);
-	Vector3 localEnd = Transform(Add(line.origin, line.diff), obbInverse);
-
-	AABB localAABB{
-		{ -obb.size.x, -obb.size.y, -obb.size.z },
-		{ obb.size.x, obb.size.y, obb.size.z },
-	};
-
-	Line localLine{};
-	localLine.origin = localOrigin;
-	localLine.diff = Subtract(localEnd, localOrigin);
-
-	// ローカル空間で衝突判定
-	if (IsCollision(localAABB, localLine)) {
-		return true;
-	}
-
-	return false;
 }
 
 // 線分の描画
@@ -758,12 +529,50 @@ void DrawOBB(const OBB& obb, const Matrix4x4& viewProjectionMatrix, const Matrix
 	DrawLine3D(worldVertices[3], worldVertices[7], viewProjectionMatrix, viewportMatrix, color);
 }
 
-// 線分の描画
-void DrawSegment(const Segment& segment, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
-	Vector3 start = segment.origin;
-	Vector3 end = Add(segment.origin, segment.diff);
+// 回転からOBBの軸を作る
+void ApplyRotateToOBB(OBB& obb, const Vector3& rotate) {
+	Vector3 rotateRadian{
+		DegreeToRadian(rotate.x),
+		DegreeToRadian(rotate.y),
+		DegreeToRadian(rotate.z),
+	};
 
-	DrawLine3D(start, end, viewProjectionMatrix, viewportMatrix, color);
+	// 回転行列を生成
+	Matrix4x4 rotateMatrix = Multiply(
+		MakeRotateXMatrix(rotateRadian.x),
+		Multiply(MakeRotateYMatrix(rotateRadian.y), MakeRotateZMatrix(rotateRadian.z)));
+
+	// 回転行列から軸を抽出
+	obb.orientations[0].x = rotateMatrix.m[0][0];
+	obb.orientations[0].y = rotateMatrix.m[0][1];
+	obb.orientations[0].z = rotateMatrix.m[0][2];
+
+	obb.orientations[1].x = rotateMatrix.m[1][0];
+	obb.orientations[1].y = rotateMatrix.m[1][1];
+	obb.orientations[1].z = rotateMatrix.m[1][2];
+
+	obb.orientations[2].x = rotateMatrix.m[2][0];
+	obb.orientations[2].y = rotateMatrix.m[2][1];
+	obb.orientations[2].z = rotateMatrix.m[2][2];
+
+	for (int32_t index = 0; index < 3; ++index) {
+		obb.orientations[index] = Normalize(obb.orientations[index]);
+	}
+}
+
+// OBBのサイズを整える
+void ClampOBBSize(OBB& obb) {
+	if (obb.size.x < 0.0f) {
+		obb.size.x = 0.0f;
+	}
+
+	if (obb.size.y < 0.0f) {
+		obb.size.y = 0.0f;
+	}
+
+	if (obb.size.z < 0.0f) {
+		obb.size.z = 0.0f;
+	}
 }
 
 const char kWindowTitle[] = "LC1C_14_コウケンリュウ";
@@ -780,21 +589,27 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Vector3 cameraTranslate{ 0.0f, 1.9f, -6.49f };
 	Vector3 cameraRotate{ 0.26f, 0.0f, 0.0f };
 
-	Vector3 rotate{ 0.0f, 0.0f, 0.0f };
+	Vector3 rotate1{ 0.0f, 0.0f, 0.0f };
+	Vector3 rotate2{ -3.0f, -143.0f, 9.0f };
 
-	OBB obb{
-		{ -1.0f, 0.0f, 0.0f },
+	OBB obb1{
+		{ 0.0f, 0.0f, 0.0f },
 		{
 			{ 1.0f, 0.0f, 0.0f },
 			{ 0.0f, 1.0f, 0.0f },
 			{ 0.0f, 0.0f, 1.0f },
 		},
-		{ 0.5f, 0.5f, 0.5f },
+		{ 0.83f, 0.26f, 0.24f },
 	};
 
-	Segment segment{
-		{ -0.8f, -0.3f, 0.0f },
-		{ 0.5f, 0.5f, 0.5f },
+	OBB obb2{
+		{ 0.9f, 0.66f, 0.78f },
+		{
+			{ 1.0f, 0.0f, 0.0f },
+			{ 0.0f, 1.0f, 0.0f },
+			{ 0.0f, 0.0f, 1.0f },
+		},
+		{ 0.5f, 0.37f, 0.5f },
 	};
 
 	// キー入力結果を受け取る箱
@@ -817,57 +632,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		ImGui::Begin("Window");
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("obb.center", &obb.center.x, 0.01f);
-		ImGui::DragFloat("rotateX", &rotate.x, 1.0f, -360.0f, 360.0f, "%.0f deg");
-		ImGui::DragFloat("rotateY", &rotate.y, 1.0f, -360.0f, 360.0f, "%.0f deg");
-		ImGui::DragFloat("rotateZ", &rotate.z, 1.0f, -360.0f, 360.0f, "%.0f deg");
-		ImGui::InputFloat3("obb.orientations[0]", &obb.orientations[0].x, "%.3f", ImGuiInputTextFlags_ReadOnly);
-		ImGui::InputFloat3("obb.orientations[1]", &obb.orientations[1].x, "%.3f", ImGuiInputTextFlags_ReadOnly);
-		ImGui::InputFloat3("obb.orientations[2]", &obb.orientations[2].x, "%.3f", ImGuiInputTextFlags_ReadOnly);
-		ImGui::DragFloat3("obb.size", &obb.size.x, 0.01f);
-		ImGui::DragFloat3("segment.origin", &segment.origin.x, 0.01f);
-		ImGui::DragFloat3("segment.diff", &segment.diff.x, 0.01f);
+
+		ImGui::DragFloat3("obb1.center", &obb1.center.x, 0.01f);
+		ImGui::DragFloat("obb1.rotateX", &rotate1.x, 1.0f, -360.0f, 360.0f, "%.0f deg");
+		ImGui::DragFloat("obb1.rotateY", &rotate1.y, 1.0f, -360.0f, 360.0f, "%.0f deg");
+		ImGui::DragFloat("obb1.rotateZ", &rotate1.z, 1.0f, -360.0f, 360.0f, "%.0f deg");
+		ImGui::DragFloat3("obb1.size", &obb1.size.x, 0.01f);
+
+		ImGui::DragFloat3("obb2.center", &obb2.center.x, 0.01f);
+		ImGui::DragFloat("obb2.rotateX", &rotate2.x, 1.0f, -360.0f, 360.0f, "%.0f deg");
+		ImGui::DragFloat("obb2.rotateY", &rotate2.y, 1.0f, -360.0f, 360.0f, "%.0f deg");
+		ImGui::DragFloat("obb2.rotateZ", &rotate2.z, 1.0f, -360.0f, 360.0f, "%.0f deg");
+		ImGui::DragFloat3("obb2.size", &obb2.size.x, 0.01f);
 		ImGui::End();
 
-		Vector3 rotateRadian{
-			DegreeToRadian(rotate.x),
-			DegreeToRadian(rotate.y),
-			DegreeToRadian(rotate.z),
-		};
+		ApplyRotateToOBB(obb1, rotate1);
+		ApplyRotateToOBB(obb2, rotate2);
 
-		// 回転行列を生成
-		Matrix4x4 rotateMatrix = Multiply(
-			MakeRotateXMatrix(rotateRadian.x),
-			Multiply(MakeRotateYMatrix(rotateRadian.y), MakeRotateZMatrix(rotateRadian.z)));
-
-		// 回転行列から軸を抽出
-		obb.orientations[0].x = rotateMatrix.m[0][0];
-		obb.orientations[0].y = rotateMatrix.m[0][1];
-		obb.orientations[0].z = rotateMatrix.m[0][2];
-
-		obb.orientations[1].x = rotateMatrix.m[1][0];
-		obb.orientations[1].y = rotateMatrix.m[1][1];
-		obb.orientations[1].z = rotateMatrix.m[1][2];
-
-		obb.orientations[2].x = rotateMatrix.m[2][0];
-		obb.orientations[2].y = rotateMatrix.m[2][1];
-		obb.orientations[2].z = rotateMatrix.m[2][2];
-
-		for (int32_t index = 0; index < 3; ++index) {
-			obb.orientations[index] = Normalize(obb.orientations[index]);
-		}
-
-		if (obb.size.x < 0.0f) {
-			obb.size.x = 0.0f;
-		}
-
-		if (obb.size.y < 0.0f) {
-			obb.size.y = 0.0f;
-		}
-
-		if (obb.size.z < 0.0f) {
-			obb.size.z = 0.0f;
-		}
+		ClampOBBSize(obb1);
+		ClampOBBSize(obb2);
 
 		///
 		/// ↑更新処理ここまで
@@ -886,12 +669,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
 		uint32_t color = 0xFFFFFFFF;
-		if (IsCollision(segment, obb)) {
+		if (IsCollision(obb1, obb2)) {
 			color = 0xFF0000FF;
 		}
 
-		DrawOBB(obb, viewProjectionMatrix, viewportMatrix, color);
-		DrawSegment(segment, viewProjectionMatrix, viewportMatrix, color);
+		DrawOBB(obb1, viewProjectionMatrix, viewportMatrix, color);
+		DrawOBB(obb2, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
 
 		///
 		/// ↑描画処理ここまで
