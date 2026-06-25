@@ -69,17 +69,6 @@ float Length(const Vector3& vector) {
 	return result;
 }
 
-// 線形補間
-Vector3 Lerp(const Vector3& v1, const Vector3& v2, float t) {
-	Vector3 result{};
-
-	result.x = v1.x + (v2.x - v1.x) * t;
-	result.y = v1.y + (v2.y - v1.y) * t;
-	result.z = v1.z + (v2.z - v1.z) * t;
-
-	return result;
-}
-
 // 行列の積
 Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2) {
 	Matrix4x4 result{};
@@ -296,6 +285,17 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
+// 行列から平行移動成分を取り出す
+Vector3 GetTranslate(const Matrix4x4& matrix) {
+	Vector3 result{};
+
+	result.x = matrix.m[3][0];
+	result.y = matrix.m[3][1];
+	result.z = matrix.m[3][2];
+
+	return result;
+}
+
 // 線分の描画
 void DrawLine3D(const Vector3& start, const Vector3& end, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
 	Vector3 startScreen = Transform(Transform(start, viewProjectionMatrix), viewportMatrix);
@@ -389,37 +389,6 @@ void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, con
 	}
 }
 
-// 2次ベジェ曲線の描画
-void DrawBezier(
-	const Vector3& controlPoint0,
-	const Vector3& controlPoint1,
-	const Vector3& controlPoint2,
-	const Matrix4x4& viewProjectionMatrix,
-	const Matrix4x4& viewportMatrix,
-	uint32_t color) {
-
-	const uint32_t kSubdivision = 32; // 分割数
-
-	Vector3 previousPoint = controlPoint0;
-
-	for (uint32_t index = 1; index <= kSubdivision; ++index) {
-		float t = float(index) / float(kSubdivision);
-
-		// 制御点p0,p1を線形補間
-		Vector3 p0p1 = Lerp(controlPoint0, controlPoint1, t);
-
-		// 制御点p1,p2を線形補間
-		Vector3 p1p2 = Lerp(controlPoint1, controlPoint2, t);
-
-		// 補間点p0p1,p1p2をさらに線形補間
-		Vector3 point = Lerp(p0p1, p1p2, t);
-
-		DrawLine3D(previousPoint, point, viewProjectionMatrix, viewportMatrix, color);
-
-		previousPoint = point;
-	}
-}
-
 const char kWindowTitle[] = "LC1C_14_コウケンリュウ";
 
 static const int kWindowWidth = 1280;
@@ -434,10 +403,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Vector3 cameraTranslate{ 0.0f, 1.9f, -6.49f };
 	Vector3 cameraRotate{ 0.26f, 0.0f, 0.0f };
 
-	Vector3 controlPoints[3] = {
-		{ -0.8f, 0.58f, 1.0f },
-		{ 1.76f, 1.0f, -0.3f },
-		{ 0.94f, -0.7f, 2.3f },
+	Vector3 translates[3] = {
+		{ 0.2f, 1.0f, 0.0f },
+		{ 0.4f, 0.0f, 0.0f },
+		{ 0.3f, 0.0f, 0.0f },
+	};
+
+	Vector3 rotates[3] = {
+		{ 0.0f, 0.0f, -6.8f },
+		{ 0.0f, 0.0f, -1.4f },
+		{ 0.0f, 0.0f, 0.0f },
+	};
+
+	Vector3 scales[3] = {
+		{ 1.0f, 1.0f, 1.0f },
+		{ 1.0f, 1.0f, 1.0f },
+		{ 1.0f, 1.0f, 1.0f },
 	};
 
 	// キー入力結果を受け取る箱
@@ -460,10 +441,38 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		ImGui::Begin("Window");
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("controlPoints[0]", &controlPoints[0].x, 0.01f);
-		ImGui::DragFloat3("controlPoints[1]", &controlPoints[1].x, 0.01f);
-		ImGui::DragFloat3("controlPoints[2]", &controlPoints[2].x, 0.01f);
+
+		ImGui::DragFloat3("translates[0]", &translates[0].x, 0.01f);
+		ImGui::DragFloat3("rotates[0]", &rotates[0].x, 0.01f);
+		ImGui::DragFloat3("scales[0]", &scales[0].x, 0.01f);
+
+		ImGui::DragFloat3("translates[1]", &translates[1].x, 0.01f);
+		ImGui::DragFloat3("rotates[1]", &rotates[1].x, 0.01f);
+		ImGui::DragFloat3("scales[1]", &scales[1].x, 0.01f);
+
+		ImGui::DragFloat3("translates[2]", &translates[2].x, 0.01f);
+		ImGui::DragFloat3("rotates[2]", &rotates[2].x, 0.01f);
+		ImGui::DragFloat3("scales[2]", &scales[2].x, 0.01f);
 		ImGui::End();
+
+		// LocalMatrixを作る
+		Matrix4x4 localMatrices[3]{};
+
+		for (int32_t index = 0; index < 3; ++index) {
+			localMatrices[index] = MakeAffineMatrix(scales[index], rotates[index], translates[index]);
+		}
+
+		// WorldMatrixを階層構造に合わせて求める
+		Matrix4x4 worldMatrices[3]{};
+		worldMatrices[0] = localMatrices[0];
+		worldMatrices[1] = Multiply(localMatrices[1], worldMatrices[0]);
+		worldMatrices[2] = Multiply(localMatrices[2], worldMatrices[1]);
+
+		// WorldMatrixから位置を取り出す
+		Vector3 positions[3]{};
+		for (int32_t index = 0; index < 3; ++index) {
+			positions[index] = GetTranslate(worldMatrices[index]);
+		}
 
 		///
 		/// ↑更新処理ここまで
@@ -473,7 +482,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		/// ↓描画処理ここから
 		///
 
-
 		Matrix4x4 cameraMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, cameraRotate, cameraTranslate);
 		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
 		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
@@ -482,18 +490,24 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		DrawBezier(
-			controlPoints[0],
-			controlPoints[1],
-			controlPoints[2],
-			viewProjectionMatrix,
-			viewportMatrix,
-			0x0000FFFF);
+		// 肩と肘を線でつなぐ
+		DrawLine3D(positions[0], positions[1], viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
 
-		for (int32_t index = 0; index < 3; ++index) {
-			Sphere controlPointSphere{ controlPoints[index], 0.01f };
-			DrawSphere(controlPointSphere, viewProjectionMatrix, viewportMatrix, 0x000000FF);
-		}
+		// 肘と手を線でつなぐ
+		DrawLine3D(positions[1], positions[2], viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
+
+		Sphere shoulder{ positions[0], 0.05f };
+		Sphere elbow{ positions[1], 0.05f };
+		Sphere hand{ positions[2], 0.05f };
+
+		// 肩を赤で描画する
+		DrawSphere(shoulder, viewProjectionMatrix, viewportMatrix, 0xFF0000FF);
+
+		// 肘を緑で描画する
+		DrawSphere(elbow, viewProjectionMatrix, viewportMatrix, 0x00FF00FF);
+
+		// 手を青で描画する
+		DrawSphere(hand, viewProjectionMatrix, viewportMatrix, 0x0000FFFF);
 
 		///
 		/// ↑描画処理ここまで
