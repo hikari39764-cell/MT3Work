@@ -4,7 +4,6 @@
 #include <cstring>
 #include <cstdint>
 
-// 3次元ベクトルの構造体
 struct Vector3 {
 	float x;
 	float y;
@@ -41,35 +40,23 @@ struct Vector3 {
 	}
 };
 
-// 4x4行列の構造体
 struct Matrix4x4 {
 	float m[4][4];
-};
-
-// ばね
-struct Spring {
-	Vector3 anchor;             // アンカー。固定された端の位置
-	float naturalLength;        // 自然長
-	float stiffness;            // 剛性。バネ定数k
-	float dampingCoefficient;   // 減衰係数
-};
-
-
-// ボール
-struct Ball {
-	Vector3 position;     // ボールの位置
-	Vector3 velocity;     // ボールの速度
-	Vector3 acceleration; // ボールの加速度
-	float mass;           // ボールの質量
-	float radius;         // ボールの半径
-	uint32_t color;       // ボールの色
 };
 
 struct Sphere {
 	Vector3 center; // 中心点
 	float radius;  // 半径
 };
-// ベクトルの加算
+
+struct Ball {
+	Vector3 position;     // ボールの位置
+	Vector3 velocity;     // ボールの速度
+	Vector3 acceleration; // ボールの加速度
+	float radius;         // ボールの半径
+	uint32_t color;       // ボールの色
+};
+
 Vector3 Add(const Vector3& v1, const Vector3& v2) {
 	Vector3 result{};
 
@@ -80,7 +67,6 @@ Vector3 Add(const Vector3& v1, const Vector3& v2) {
 	return result;
 }
 
-// ベクトルの減算
 Vector3 Subtract(const Vector3& v1, const Vector3& v2) {
 	Vector3 result{};
 
@@ -91,46 +77,41 @@ Vector3 Subtract(const Vector3& v1, const Vector3& v2) {
 	return result;
 }
 
-// ベクトルのスカラー倍
-Vector3 Multiply(float scalar, const Vector3& vector) {
+Vector3 Multiply(float scalar, const Vector3& v) {
 	Vector3 result{};
 
-	result.x = scalar * vector.x;
-	result.y = scalar * vector.y;
-	result.z = scalar * vector.z;
+	result.x = scalar * v.x;
+	result.y = scalar * v.y;
+	result.z = scalar * v.z;
 
 	return result;
 }
 
-// ベクトルの内積
 float Dot(const Vector3& v1, const Vector3& v2) {
 	float result = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
 
 	return result;
 }
 
-// ベクトルの長さ
-float Length(const Vector3& vector) {
-	float result = std::sqrt(Dot(vector, vector));
+float Length(const Vector3& v) {
+	float result = std::sqrt(Dot(v, v));
 
 	return result;
 }
 
-// 正規化
-Vector3 Normalize(const Vector3& vector) {
+Vector3 Normalize(const Vector3& v) {
 	Vector3 result{};
 
-	float length = Length(vector);
+	float length = Length(v);
 	if (length != 0.0f) {
-		result.x = vector.x / length;
-		result.y = vector.y / length;
-		result.z = vector.z / length;
+		result.x = v.x / length;
+		result.y = v.y / length;
+		result.z = v.z / length;
 	}
 
 	return result;
 }
 
-// ベクトルの二項演算子
 Vector3 operator+(const Vector3& v1, const Vector3& v2) {
 	return Add(v1, v2);
 }
@@ -155,7 +136,6 @@ Vector3 operator/(const Vector3& v, float s) {
 	return Multiply(1.0f / s, v);
 }
 
-// ベクトルの単項演算子
 Vector3 operator-(const Vector3& v) {
 	return { -v.x, -v.y, -v.z };
 }
@@ -164,13 +144,12 @@ Vector3 operator+(const Vector3& v) {
 	return v;
 }
 
-// 行列の積
 Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2) {
 	Matrix4x4 result{};
 
-	for (int32_t row = 0; row < 4; ++row) {
-		for (int32_t column = 0; column < 4; ++column) {
-			for (int32_t element = 0; element < 4; ++element) {
+	for (int row = 0; row < 4; ++row) {
+		for (int column = 0; column < 4; ++column) {
+			for (int element = 0; element < 4; ++element) {
 				result.m[row][column] += m1.m[row][element] * m2.m[element][column];
 			}
 		}
@@ -179,12 +158,10 @@ Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2) {
 	return result;
 }
 
-// 行列の積演算子
 Matrix4x4 operator*(const Matrix4x4& m1, const Matrix4x4& m2) {
 	return Multiply(m1, m2);
 }
 
-// ベクトルと行列の積
 Vector3 Transform(const Vector3& vector, const Matrix4x4& matrix) {
 	Vector3 result{};
 
@@ -203,7 +180,17 @@ Vector3 Transform(const Vector3& vector, const Matrix4x4& matrix) {
 	return result;
 }
 
-// 平行移動行列
+Matrix4x4 MakeScaleMatrix(const Vector3& scale) {
+	Matrix4x4 result{};
+
+	result.m[0][0] = scale.x;
+	result.m[1][1] = scale.y;
+	result.m[2][2] = scale.z;
+	result.m[3][3] = 1.0f;
+
+	return result;
+}
+
 Matrix4x4 MakeTranslateMatrix(const Vector3& translate) {
 	Matrix4x4 result{};
 
@@ -218,19 +205,6 @@ Matrix4x4 MakeTranslateMatrix(const Vector3& translate) {
 	return result;
 }
 
-// 拡大縮小行列
-Matrix4x4 MakeScaleMatrix(const Vector3& scale) {
-	Matrix4x4 result{};
-
-	result.m[0][0] = scale.x;
-	result.m[1][1] = scale.y;
-	result.m[2][2] = scale.z;
-	result.m[3][3] = 1.0f;
-
-	return result;
-}
-
-// x軸回転行列
 Matrix4x4 MakeRotateXMatrix(float radian) {
 	Matrix4x4 result{};
 
@@ -247,7 +221,6 @@ Matrix4x4 MakeRotateXMatrix(float radian) {
 	return result;
 }
 
-// y軸回転行列
 Matrix4x4 MakeRotateYMatrix(float radian) {
 	Matrix4x4 result{};
 
@@ -264,7 +237,6 @@ Matrix4x4 MakeRotateYMatrix(float radian) {
 	return result;
 }
 
-// z軸回転行列
 Matrix4x4 MakeRotateZMatrix(float radian) {
 	Matrix4x4 result{};
 
@@ -281,7 +253,6 @@ Matrix4x4 MakeRotateZMatrix(float radian) {
 	return result;
 }
 
-// 3次元アフィン変換行列
 Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translate) {
 	Matrix4x4 scaleMatrix = MakeScaleMatrix(scale);
 	Matrix4x4 rotateXMatrix = MakeRotateXMatrix(rotate.x);
@@ -293,7 +264,6 @@ Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Ve
 	return scaleMatrix * rotateMatrix * translateMatrix;
 }
 
-// 逆行列
 Matrix4x4 Inverse(const Matrix4x4& matrix) {
 	Matrix4x4 result{};
 
@@ -355,7 +325,6 @@ Matrix4x4 Inverse(const Matrix4x4& matrix) {
 	return result;
 }
 
-// 透視投影行列
 Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearClip, float farClip) {
 	Matrix4x4 result{};
 
@@ -370,7 +339,6 @@ Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearClip
 	return result;
 }
 
-// ビューポート変換行列
 Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, float minDepth, float maxDepth) {
 	Matrix4x4 result{};
 
@@ -385,7 +353,6 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
-// 線分の描画
 void DrawLine3D(const Vector3& start, const Vector3& end, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
 	Vector3 startScreen = Transform(Transform(start, viewProjectionMatrix), viewportMatrix);
 	Vector3 endScreen = Transform(Transform(end, viewProjectionMatrix), viewportMatrix);
@@ -398,7 +365,40 @@ void DrawLine3D(const Vector3& start, const Vector3& end, const Matrix4x4& viewP
 		color);
 }
 
-// 球の描画
+void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
+	const float kGridHalfWidth = 2.0f;                               // Gridの半分の幅
+	const uint32_t kSubdivision = 10;                                // 分割数
+	const float kGridEvery = (kGridHalfWidth * 2.0f) / kSubdivision; // 1つ分の長さ
+
+	// 奥から手前への線を順々に引いていく
+	for (uint32_t xIndex = 0; xIndex <= kSubdivision; ++xIndex) {
+		float x = -kGridHalfWidth + kGridEvery * xIndex;
+		Vector3 start{ x, 0.0f, -kGridHalfWidth };
+		Vector3 end{ x, 0.0f, kGridHalfWidth };
+
+		uint32_t color = 0xAAAAAAFF;
+		if (xIndex == kSubdivision / 2) {
+			color = 0x000000FF;
+		}
+
+		DrawLine3D(start, end, viewProjectionMatrix, viewportMatrix, color);
+	}
+
+	// 左から右も同じように順々に引いていく
+	for (uint32_t zIndex = 0; zIndex <= kSubdivision; ++zIndex) {
+		float z = -kGridHalfWidth + kGridEvery * zIndex;
+		Vector3 start{ -kGridHalfWidth, 0.0f, z };
+		Vector3 end{ kGridHalfWidth, 0.0f, z };
+
+		uint32_t color = 0xAAAAAAFF;
+		if (zIndex == kSubdivision / 2) {
+			color = 0x000000FF;
+		}
+
+		DrawLine3D(start, end, viewProjectionMatrix, viewportMatrix, color);
+	}
+}
+
 void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
 	const float pi = 3.14159265358979323846f;
 	const uint32_t kSubdivision = 16;                 // 分割数
@@ -437,43 +437,7 @@ void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, con
 	}
 }
 
-// グリッドの描画
-void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
-	const float kGridHalfWidth = 2.0f;                               // Gridの半分の幅
-	const uint32_t kSubdivision = 10;                                // 分割数
-	const float kGridEvery = (kGridHalfWidth * 2.0f) / kSubdivision; // 1つ分の長さ
-
-	// 奥から手前への線を順々に引いていく
-	for (uint32_t xIndex = 0; xIndex <= kSubdivision; ++xIndex) {
-		float x = -kGridHalfWidth + kGridEvery * xIndex;
-		Vector3 start{ x, 0.0f, -kGridHalfWidth };
-		Vector3 end{ x, 0.0f, kGridHalfWidth };
-
-		uint32_t color = 0xAAAAAAFF;
-		if (xIndex == kSubdivision / 2) {
-			color = 0x000000FF;
-		}
-
-		DrawLine3D(start, end, viewProjectionMatrix, viewportMatrix, color);
-	}
-
-	// 左から右も同じように順々に引いていく
-	for (uint32_t zIndex = 0; zIndex <= kSubdivision; ++zIndex) {
-		float z = -kGridHalfWidth + kGridEvery * zIndex;
-		Vector3 start{ -kGridHalfWidth, 0.0f, z };
-		Vector3 end{ kGridHalfWidth, 0.0f, z };
-
-		uint32_t color = 0xAAAAAAFF;
-		if (zIndex == kSubdivision / 2) {
-			color = 0x000000FF;
-		}
-
-		DrawLine3D(start, end, viewProjectionMatrix, viewportMatrix, color);
-	}
-}
-
-
-const char kWindowTitle[] = "LC1C_14_コウケンリュウ";
+const char kWindowTitle[] = "MT3";
 
 static const int kWindowWidth = 1280;
 static const int kWindowHeight = 720;
@@ -487,21 +451,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Vector3 cameraTranslate{ 0.0f, 1.9f, -6.49f };
 	Vector3 cameraRotate{ 0.26f, 0.0f, 0.0f };
 
-	Spring spring{};
-	spring.anchor = { 0.0f, 0.0f, 0.0f };
-	spring.naturalLength = 1.0f;
-	spring.stiffness = 100.0f;
-	spring.dampingCoefficient = 2.0f;
+	Vector3 center{ 0.0f, 0.0f, 0.0f };
+	float radius = 0.8f;
+	float angularVelocity = 3.14159265358979323846f;
+	float angle = 0.0f;
 
 	Ball ball{};
-	ball.position = { 1.2f, 0.0f, 0.0f };
-	ball.velocity = { 0.0f, 0.0f, 0.0f };
-	ball.acceleration = { 0.0f, 0.0f, 0.0f };
-	ball.mass = 2.0f;
+	ball.position = { center.x + radius, center.y, center.z };
+	ball.velocity = {};
+	ball.acceleration = {};
 	ball.radius = 0.05f;
-	ball.color = 0x0000FFFF;
-
-	const Ball kInitialBall = ball;
+	ball.color = 0xFFFFFFFF;
 
 	bool isMove = false;
 
@@ -522,83 +482,85 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		/// ↓更新処理ここから
 		///
 
+		const float pi = 3.14159265358979323846f;
 		const float deltaTime = 1.0f / 60.0f;
 
 		ImGui::Begin("Window");
 
+		// Startボタンで動かし始める
 		if (ImGui::Button("Start")) {
 			isMove = true;
 		}
 
 		ImGui::SameLine();
 
+		// Resetボタンで初期状態に戻す
 		if (ImGui::Button("Reset")) {
-			ball = kInitialBall;
 			isMove = false;
+			angle = 0.0f;
+			ball.velocity = {};
+			ball.acceleration = {};
 		}
 
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("Spring.Anchor", &spring.anchor.x, 0.01f);
-		ImGui::DragFloat("Spring.NaturalLength", &spring.naturalLength, 0.01f);
-		ImGui::DragFloat("Spring.Stiffness", &spring.stiffness, 0.1f);
-		ImGui::DragFloat("Spring.DampingCoefficient", &spring.dampingCoefficient, 0.01f);
-		ImGui::DragFloat3("Ball.Position", &ball.position.x, 0.01f);
-		ImGui::DragFloat("Ball.Mass", &ball.mass, 0.01f);
+		ImGui::DragFloat3("Center", &center.x, 0.01f);
+		ImGui::DragFloat("Radius", &radius, 0.01f);
+		ImGui::DragFloat("AngularVelocity", &angularVelocity, 0.01f);
+		ImGui::DragFloat("Angle", &angle, 0.01f);
 		ImGui::DragFloat("Ball.Radius", &ball.radius, 0.01f);
+
+		ImGui::Text("position : %.3f, %.3f, %.3f", ball.position.x, ball.position.y, ball.position.z);
+		ImGui::Text("velocity : %.3f, %.3f, %.3f", ball.velocity.x, ball.velocity.y, ball.velocity.z);
+		ImGui::Text("acceleration : %.3f, %.3f, %.3f", ball.acceleration.x, ball.acceleration.y, ball.acceleration.z);
 
 		ImGui::End();
 
+		// Spaceキーで動かし始める
 		if (preKeys[DIK_SPACE] == 0 && keys[DIK_SPACE] != 0) {
 			isMove = true;
 		}
 
+		// Rキーで初期状態に戻す
 		if (preKeys[DIK_R] == 0 && keys[DIK_R] != 0) {
-			ball = kInitialBall;
 			isMove = false;
+			angle = 0.0f;
+			ball.velocity = {};
+			ball.acceleration = {};
 		}
 
-		if (ball.mass <= 0.0f) {
-			ball.mass = 0.01f;
+		// 半径が負にならないようにする
+		if (radius < 0.0f) {
+			radius = 0.0f;
 		}
 
 		if (ball.radius <= 0.0f) {
 			ball.radius = 0.01f;
 		}
 
-		if (spring.naturalLength < 0.0f) {
-			spring.naturalLength = 0.0f;
-		}
-
+		// 角度を更新する
 		if (isMove) {
-			Vector3 force{};
+			angle += angularVelocity * deltaTime;
 
-			// アンカーからボールへの差分を求める
-			Vector3 diff = ball.position - spring.anchor;
-			float length = Length(diff);
-
-			if (length != 0.0f) {
-				// 自然長からの変位ベクトルを求める
-				Vector3 direction = Normalize(diff);
-				Vector3 displacement = (length - spring.naturalLength) * direction;
-
-				// フックの法則で復元力を求める
-				Vector3 restoringForce = -spring.stiffness * displacement;
-
-				// 減衰抵抗を計算する
-				Vector3 dampingForce = -spring.dampingCoefficient * ball.velocity;
-
-				// 復元力と減衰抵抗を合わせる
-				force = restoringForce + dampingForce;
+			if (angle >= 2.0f * pi) {
+				angle -= 2.0f * pi;
 			}
-
-			// 力から加速度を求める
-			ball.acceleration = force / ball.mass;
-
-			// 加速度から速度、速度から位置を更新する
-			ball.velocity += ball.acceleration * deltaTime;
-			ball.position += ball.velocity * deltaTime;
 		}
+
+		// XY平面上で等速円運動させる
+		ball.position.x = center.x + std::cos(angle) * radius;
+		ball.position.y = center.y + std::sin(angle) * radius;
+		ball.position.z = center.z;
+
+		// 等速円運動の速度を求める
+		ball.velocity.x = -radius * angularVelocity * std::sin(angle);
+		ball.velocity.y = radius * angularVelocity * std::cos(angle);
+		ball.velocity.z = 0.0f;
+
+		// 等速円運動の加速度を求める
+		ball.acceleration.x = -radius * angularVelocity * angularVelocity * std::cos(angle);
+		ball.acceleration.y = -radius * angularVelocity * angularVelocity * std::sin(angle);
+		ball.acceleration.z = 0.0f;
 
 		///
 		/// ↑更新処理ここまで
@@ -615,16 +577,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		Matrix4x4 viewProjectionMatrix = viewMatrix * projectionMatrix;
 		Matrix4x4 viewportMatrix = MakeViewportMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
 
+		// Gridを描画
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		// ばねを白い線で描画する
-		DrawLine3D(spring.anchor, ball.position, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
+		// 中心点を黒い球で描画
+		Sphere centerSphere{ center, 0.025f };
+		DrawSphere(centerSphere, viewProjectionMatrix, viewportMatrix, 0x000000FF);
 
-		// アンカーを黒い小さい球で描画する
-		Sphere anchorSphere{ spring.anchor, 0.025f };
-		DrawSphere(anchorSphere, viewProjectionMatrix, viewportMatrix, 0x000000FF);
-
-		// ボールを青で描画する
+		// 円運動する球を描画
 		Sphere ballSphere{ ball.position, ball.radius };
 		DrawSphere(ballSphere, viewProjectionMatrix, viewportMatrix, ball.color);
 
