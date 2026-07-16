@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstring>
 
-const char kWindowTitle[] = "MT3_02_11_Basic";
+const char kWindowTitle[] = "MT3";
 
 const int kWindowWidth = 1280;
 const int kWindowHeight = 720;
