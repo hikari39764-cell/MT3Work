@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstring>
 
-const char kWindowTitle[] = "MT3_04_03_Basic";
+const char kWindowTitle[] = "MT3_02_11_Basic";
 
 const int kWindowWidth = 1280;
 const int kWindowHeight = 720;
@@ -14,7 +14,6 @@ const float kPi = 3.14159265358979323846f;
 const uint32_t kWhite = 0xFFFFFFFF;
 const uint32_t kBlack = 0x000000FF;
 const uint32_t kGray = 0xAAAAAAFF;
-const uint32_t kBlue = 0x0000FFFF;
 const uint32_t kRed = 0xFF0000FF;
 
 struct Vector3 {
@@ -32,12 +31,28 @@ struct Sphere {
 	float radius;  //!< 半径
 };
 
-struct ConicalPendulum {
-	Vector3 anchor;         // アンカーポイント。固定された端の位置
-	float length;           // 紐の長さ
-	float halfApexAngle;    // 円錐の頂角の半分
-	float angle;            // 現在の角度
-	float angularVelocity;  // 角速度ω
+struct Plane {
+	Vector3 normal; //!< 法線
+	float distance; //!< 距離
+};
+
+struct Segment {
+	Vector3 origin; //!< 始点
+	Vector3 diff;   //!< 終点への差分ベクトル
+};
+
+struct Capsule {
+	Segment segment;
+	float radius;
+};
+
+struct Ball {
+	Vector3 position;     // ボールの位置
+	Vector3 velocity;     // ボールの速度
+	Vector3 acceleration; // ボールの加速度
+	float mass;           // ボールの質量
+	float radius;         // ボールの半径
+	uint32_t color;       // ボールの色
 };
 
 struct Camera {
@@ -57,8 +72,20 @@ Vector3 Multiply(float scalar, const Vector3& v) {
 	return { scalar * v.x, scalar * v.y, scalar * v.z };
 }
 
+float Dot(const Vector3& v1, const Vector3& v2) {
+	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+}
+
+Vector3 Cross(const Vector3& v1, const Vector3& v2) {
+	return {
+		v1.y * v2.z - v1.z * v2.y,
+		v1.z * v2.x - v1.x * v2.z,
+		v1.x * v2.y - v1.y * v2.x
+	};
+}
+
 float Length(const Vector3& v) {
-	return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+	return std::sqrt(Dot(v, v));
 }
 
 Vector3 Normalize(const Vector3& v) {
@@ -71,12 +98,35 @@ Vector3 Normalize(const Vector3& v) {
 	return { v.x / length, v.y / length, v.z / length };
 }
 
+Vector3 Project(const Vector3& v1, const Vector3& v2) {
+	Vector3 normal = Normalize(v2);
+	return Multiply(Dot(v1, normal), normal);
+}
+
+Vector3 Reflect(const Vector3& input, const Vector3& normal) {
+	Vector3 n = Normalize(normal);
+
+	return Subtract(input, Multiply(2.0f * Dot(input, n), n));
+}
+
+Vector3 Perpendicular(const Vector3& vector) {
+	if (vector.x != 0.0f || vector.y != 0.0f) {
+		return Normalize({ -vector.y, vector.x, 0.0f });
+	}
+
+	return Normalize({ 0.0f, -vector.z, vector.y });
+}
+
 Vector3 operator+(const Vector3& v1, const Vector3& v2) {
 	return Add(v1, v2);
 }
 
 Vector3 operator-(const Vector3& v1, const Vector3& v2) {
 	return Subtract(v1, v2);
+}
+
+Vector3 operator-(const Vector3& v) {
+	return { -v.x, -v.y, -v.z };
 }
 
 Vector3 operator*(float scalar, const Vector3& v) {
@@ -107,8 +157,8 @@ Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2) {
 
 	for (int row = 0; row < 4; ++row) {
 		for (int column = 0; column < 4; ++column) {
-			for (int i = 0; i < 4; ++i) {
-				result.m[row][column] += m1.m[row][i] * m2.m[i][column];
+			for (int index = 0; index < 4; ++index) {
+				result.m[row][column] += m1.m[row][index] * m2.m[index][column];
 			}
 		}
 	}
@@ -187,6 +237,7 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 
 Matrix4x4 MakeViewMatrix(const Camera& camera) {
 	Matrix4x4 translateMatrix = MakeTranslateMatrix({ -camera.translate.x, -camera.translate.y, -camera.translate.z });
+
 	Matrix4x4 rotateXMatrix = MakeRotateXMatrix(-camera.rotate.x);
 	Matrix4x4 rotateYMatrix = MakeRotateYMatrix(-camera.rotate.y);
 	Matrix4x4 rotateZMatrix = MakeRotateZMatrix(-camera.rotate.z);
@@ -212,6 +263,34 @@ Vector3 Transform(const Vector3& vector, const Matrix4x4& matrix) {
 	}
 
 	return result;
+}
+
+float SignedDistance(const Plane& plane, const Vector3& point) {
+	return Dot(point, plane.normal) - plane.distance;
+}
+
+bool IsCollision(const Sphere& sphere, const Plane& plane) {
+	float distance = SignedDistance(plane, sphere.center);
+
+	return distance <= sphere.radius;
+}
+
+bool IsCollision(const Capsule& capsule, const Plane& plane) {
+	Vector3 start = capsule.segment.origin;
+	Vector3 end = capsule.segment.origin + capsule.segment.diff;
+
+	float startDistance = SignedDistance(plane, start);
+	float endDistance = SignedDistance(plane, end);
+
+	if (startDistance <= capsule.radius) {
+		return true;
+	}
+
+	if (endDistance <= capsule.radius) {
+		return true;
+	}
+
+	return false;
 }
 
 void DrawLine3D(
@@ -302,34 +381,28 @@ void DrawSphere(
 	}
 }
 
-void DrawCircleXZ(
-	const Vector3& center,
-	float radius,
+void DrawPlane(
+	const Plane& plane,
 	const Matrix4x4& viewProjectionMatrix,
 	const Matrix4x4& viewportMatrix,
 	uint32_t color) {
 
-	const uint32_t kSubdivision = 64;
-	const float kEvery = 2.0f * kPi / float(kSubdivision);
+	const float kPlaneSize = 2.0f;
 
-	for (uint32_t index = 0; index < kSubdivision; ++index) {
-		float theta1 = kEvery * float(index);
-		float theta2 = kEvery * float(index + 1);
+	Vector3 center = plane.normal * plane.distance;
 
-		Vector3 p1{
-			center.x + std::cos(theta1) * radius,
-			center.y,
-			center.z - std::sin(theta1) * radius
-		};
+	Vector3 axis1 = Perpendicular(plane.normal);
+	Vector3 axis2 = Normalize(Cross(plane.normal, axis1));
 
-		Vector3 p2{
-			center.x + std::cos(theta2) * radius,
-			center.y,
-			center.z - std::sin(theta2) * radius
-		};
+	Vector3 p0 = center + axis1 * kPlaneSize + axis2 * kPlaneSize;
+	Vector3 p1 = center - axis1 * kPlaneSize + axis2 * kPlaneSize;
+	Vector3 p2 = center - axis1 * kPlaneSize - axis2 * kPlaneSize;
+	Vector3 p3 = center + axis1 * kPlaneSize - axis2 * kPlaneSize;
 
-		DrawLine3D(p1, p2, viewProjectionMatrix, viewportMatrix, color);
-	}
+	DrawLine3D(p0, p1, viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(p1, p2, viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(p2, p3, viewProjectionMatrix, viewportMatrix, color);
+	DrawLine3D(p3, p0, viewProjectionMatrix, viewportMatrix, color);
 }
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
@@ -345,25 +418,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	camera.translate = { 0.0f, 1.9f, -6.49f };
 	camera.rotate = { 0.26f, 0.0f, 0.0f };
 
-	ConicalPendulum conicalPendulum{};
-	conicalPendulum.anchor = { 0.0f, 1.0f, 0.0f };
-	conicalPendulum.length = 0.8f;
-	conicalPendulum.halfApexAngle = 0.7f;
-	conicalPendulum.angle = 0.0f;
-	conicalPendulum.angularVelocity = 0.0f;
+	Plane plane{};
+	plane.normal = Normalize({ -0.2f, 0.9f, -0.3f });
+	plane.distance = 0.0f;
 
-	Sphere bob{};
-	bob.center = { 0.0f, 0.0f, 0.0f };
-	bob.radius = 0.05f;
-
-	Sphere anchorSphere{};
-	anchorSphere.center = conicalPendulum.anchor;
-	anchorSphere.radius = 0.025f;
+	Ball ball{};
+	ball.position = { 0.8f, 1.2f, 0.3f };
+	ball.velocity = { 0.0f, 0.0f, 0.0f };
+	ball.acceleration = { 0.0f, -9.8f, 0.0f };
+	ball.mass = 2.0f;
+	ball.radius = 0.05f;
+	ball.color = kWhite;
 
 	bool isStart = false;
+	bool isHit = false;
 
+	float restitution = 0.8f;
 	const float kDeltaTime = 1.0f / 60.0f;
-	const float kGravity = 9.8f;
+
+	Vector3 initialPosition = ball.position;
+	Vector3 initialVelocity = ball.velocity;
 
 	// ウィンドウの×ボタンが押されるまでループ
 	while (Novice::ProcessMessage() == 0) {
@@ -384,54 +458,87 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			isStart = true;
 		}
 
-		ImGui::DragFloat3("CameraTranslate", &camera.translate.x, 0.01f);
-		ImGui::DragFloat3("CameraRotate", &camera.rotate.x, 0.01f);
+		if (ImGui::Button("Reset")) {
+			isStart = false;
+			ball.position = initialPosition;
+			ball.velocity = initialVelocity;
+		}
 
-		ImGui::DragFloat3("Anchor", &conicalPendulum.anchor.x, 0.01f);
-		ImGui::DragFloat("Length", &conicalPendulum.length, 0.01f);
-		ImGui::DragFloat("HalfApexAngle", &conicalPendulum.halfApexAngle, 0.01f);
-		ImGui::DragFloat("Angle", &conicalPendulum.angle, 0.01f);
+		ImGui::DragFloat3("Camera.Translate", &camera.translate.x, 0.01f);
+		ImGui::DragFloat3("Camera.Rotate", &camera.rotate.x, 0.01f);
 
-		ImGui::Text("AngularVelocity : %.3f", conicalPendulum.angularVelocity);
+		ImGui::DragFloat3("Plane.Normal", &plane.normal.x, 0.01f);
+		ImGui::DragFloat("Plane.Distance", &plane.distance, 0.01f);
+
+		ImGui::DragFloat3("Ball.Position", &ball.position.x, 0.01f);
+		ImGui::DragFloat3("Ball.Velocity", &ball.velocity.x, 0.01f);
+		ImGui::DragFloat("Ball.Radius", &ball.radius, 0.01f);
+		ImGui::DragFloat("Restitution", &restitution, 0.01f);
+
+		ImGui::Text("Hit : %s", isHit ? "true" : "false");
 
 		ImGui::End();
 
-		// 値が壊れないように最低限補正しておく
-		if (conicalPendulum.length < 0.01f) {
-			conicalPendulum.length = 0.01f;
+		// 法線は単位ベクトルにしておく
+		if (Length(plane.normal) == 0.0f) {
+			plane.normal = { 0.0f, 1.0f, 0.0f };
+		} else {
+			plane.normal = Normalize(plane.normal);
 		}
 
-		if (conicalPendulum.halfApexAngle < 0.01f) {
-			conicalPendulum.halfApexAngle = 0.01f;
+		if (ball.radius < 0.01f) {
+			ball.radius = 0.01f;
 		}
 
-		if (conicalPendulum.halfApexAngle > 1.4f) {
-			conicalPendulum.halfApexAngle = 1.4f;
+		if (restitution < 0.0f) {
+			restitution = 0.0f;
 		}
+
+		if (restitution > 1.0f) {
+			restitution = 1.0f;
+		}
+
+		isHit = false;
 
 		if (isStart) {
-			// 円錐振り子の角速度を求める
-			conicalPendulum.angularVelocity =
-				std::sqrt(kGravity / (conicalPendulum.length * std::cos(conicalPendulum.halfApexAngle)));
+			Vector3 previousPosition = ball.position;
 
-			// 角度を進める
-			conicalPendulum.angle += conicalPendulum.angularVelocity * kDeltaTime;
+			// 重力加速度を設定
+			ball.acceleration = { 0.0f, -9.8f, 0.0f };
 
-			if (conicalPendulum.angle >= 2.0f * kPi) {
-				conicalPendulum.angle -= 2.0f * kPi;
+			// 速度と位置を更新
+			ball.velocity = ball.velocity + ball.acceleration * kDeltaTime;
+			ball.position = ball.position + ball.velocity * kDeltaTime;
+
+			// すり抜け対策用のカプセルを作る
+			Capsule moveCapsule{};
+			moveCapsule.segment.origin = previousPosition;
+			moveCapsule.segment.diff = ball.position - previousPosition;
+			moveCapsule.radius = ball.radius;
+
+			if (IsCollision(moveCapsule, plane)) {
+				Sphere ballSphere{ ball.position, ball.radius };
+
+				if (IsCollision(ballSphere, plane)) {
+					isHit = true;
+
+					// めり込んだ分を平面の外に戻す
+					float distance = SignedDistance(plane, ball.position);
+					float penetration = ball.radius - distance;
+					ball.position = ball.position + plane.normal * penetration;
+
+					// 平面に向かっている場合だけ反射する
+					if (Dot(ball.velocity, plane.normal) < 0.0f) {
+						Vector3 reflected = Reflect(ball.velocity, plane.normal);
+						Vector3 projectToNormal = Project(reflected, plane.normal);
+						Vector3 movingDirection = reflected - projectToNormal;
+
+						// 法線方向だけ反発係数で弱める
+						ball.velocity = projectToNormal * restitution + movingDirection;
+					}
+				}
 			}
 		}
-
-		// 半径と高さを求める
-		float radius = std::sin(conicalPendulum.halfApexAngle) * conicalPendulum.length;
-		float height = std::cos(conicalPendulum.halfApexAngle) * conicalPendulum.length;
-
-		// ボブの位置を求める
-		bob.center.x = conicalPendulum.anchor.x + std::cos(conicalPendulum.angle) * radius;
-		bob.center.y = conicalPendulum.anchor.y - height;
-		bob.center.z = conicalPendulum.anchor.z - std::sin(conicalPendulum.angle) * radius;
-
-		anchorSphere.center = conicalPendulum.anchor;
 
 		Matrix4x4 viewMatrix = MakeViewMatrix(camera);
 		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
@@ -448,20 +555,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		// 円運動の軌道を描画
-		Vector3 circleCenter{
-			conicalPendulum.anchor.x,
-			conicalPendulum.anchor.y - height,
-			conicalPendulum.anchor.z
-		};
-		DrawCircleXZ(circleCenter, radius, viewProjectionMatrix, viewportMatrix, kGray);
+		DrawPlane(plane, viewProjectionMatrix, viewportMatrix, kWhite);
 
-		// アンカーとボブを結ぶ線を描画
-		DrawLine3D(conicalPendulum.anchor, bob.center, viewProjectionMatrix, viewportMatrix, kWhite);
+		Sphere drawSphere{};
+		drawSphere.center = ball.position;
+		drawSphere.radius = ball.radius;
 
-		// アンカーとボブを描画
-		DrawSphere(anchorSphere, viewProjectionMatrix, viewportMatrix, kRed);
-		DrawSphere(bob, viewProjectionMatrix, viewportMatrix, kWhite);
+		DrawSphere(drawSphere, viewProjectionMatrix, viewportMatrix, isHit ? kRed : ball.color);
 
 		///
 		/// ↑描画処理ここまで
