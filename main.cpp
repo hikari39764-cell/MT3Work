@@ -10,7 +10,7 @@ const int kWindowWidth = 1280;
 const int kWindowHeight = 720;
 
 const float kPi = 3.14159265358979323846f;
-040
+
 const uint32_t kWhite = 0xFFFFFFFF;
 const uint32_t kBlack = 0x000000FF;
 const uint32_t kGray = 0xAAAAAAFF;
