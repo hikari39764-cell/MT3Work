@@ -1,15 +1,21 @@
 #include <Novice.h>
 #include <imgui.h>
 #include <cmath>
-#include <cassert>
 #include <cstdint>
+#include <cstring>
 
-const char kWindowTitle[] = "MT3";
+const char kWindowTitle[] = "MT3_04_03_Basic";
 
 const int kWindowWidth = 1280;
 const int kWindowHeight = 720;
 
 const float kPi = 3.14159265358979323846f;
+
+const uint32_t kWhite = 0xFFFFFFFF;
+const uint32_t kBlack = 0x000000FF;
+const uint32_t kGray = 0xAAAAAAFF;
+const uint32_t kBlue = 0x0000FFFF;
+const uint32_t kRed = 0xFF0000FF;
 
 struct Vector3 {
 	float x;
@@ -22,61 +28,67 @@ struct Matrix4x4 {
 };
 
 struct Sphere {
-	Vector3 center; // 中心点
-	float radius;  // 半径
+	Vector3 center; //!< 中心点
+	float radius;  //!< 半径
 };
 
-struct Pendulum {
-	Vector3 anchor;              // アンカーポイント。固定された端の位置
-	float length;                // 紐の長さ
-	float angle;                 // 現在の角度
-	float angularVelocity;       // 角速度
-	float angularAcceleration;   // 角加速度
+struct ConicalPendulum {
+	Vector3 anchor;         // アンカーポイント。固定された端の位置
+	float length;           // 紐の長さ
+	float halfApexAngle;    // 円錐の頂角の半分
+	float angle;            // 現在の角度
+	float angularVelocity;  // 角速度ω
+};
+
+struct Camera {
+	Vector3 translate;
+	Vector3 rotate;
 };
 
 Vector3 Add(const Vector3& v1, const Vector3& v2) {
-	return {
-		v1.x + v2.x,
-		v1.y + v2.y,
-		v1.z + v2.z,
-	};
+	return { v1.x + v2.x, v1.y + v2.y, v1.z + v2.z };
 }
 
 Vector3 Subtract(const Vector3& v1, const Vector3& v2) {
-	return {
-		v1.x - v2.x,
-		v1.y - v2.y,
-		v1.z - v2.z,
-	};
+	return { v1.x - v2.x, v1.y - v2.y, v1.z - v2.z };
 }
 
 Vector3 Multiply(float scalar, const Vector3& v) {
-	return {
-		scalar * v.x,
-		scalar * v.y,
-		scalar * v.z,
-	};
-}
-
-float Dot(const Vector3& v1, const Vector3& v2) {
-	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+	return { scalar * v.x, scalar * v.y, scalar * v.z };
 }
 
 float Length(const Vector3& v) {
-	return std::sqrt(Dot(v, v));
+	return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 }
 
 Vector3 Normalize(const Vector3& v) {
 	float length = Length(v);
+
 	if (length == 0.0f) {
 		return { 0.0f, 0.0f, 0.0f };
 	}
 
-	return {
-		v.x / length,
-		v.y / length,
-		v.z / length,
-	};
+	return { v.x / length, v.y / length, v.z / length };
+}
+
+Vector3 operator+(const Vector3& v1, const Vector3& v2) {
+	return Add(v1, v2);
+}
+
+Vector3 operator-(const Vector3& v1, const Vector3& v2) {
+	return Subtract(v1, v2);
+}
+
+Vector3 operator*(float scalar, const Vector3& v) {
+	return Multiply(scalar, v);
+}
+
+Vector3 operator*(const Vector3& v, float scalar) {
+	return scalar * v;
+}
+
+Vector3 operator/(const Vector3& v, float scalar) {
+	return { v.x / scalar, v.y / scalar, v.z / scalar };
 }
 
 Matrix4x4 MakeIdentity4x4() {
@@ -95,24 +107,21 @@ Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2) {
 
 	for (int row = 0; row < 4; ++row) {
 		for (int column = 0; column < 4; ++column) {
-			result.m[row][column] =
-				m1.m[row][0] * m2.m[0][column] +
-				m1.m[row][1] * m2.m[1][column] +
-				m1.m[row][2] * m2.m[2][column] +
-				m1.m[row][3] * m2.m[3][column];
+			for (int i = 0; i < 4; ++i) {
+				result.m[row][column] += m1.m[row][i] * m2.m[i][column];
+			}
 		}
 	}
 
 	return result;
 }
 
-Matrix4x4 MakeScaleMatrix(const Vector3& scale) {
-	Matrix4x4 result{};
+Matrix4x4 MakeTranslateMatrix(const Vector3& translate) {
+	Matrix4x4 result = MakeIdentity4x4();
 
-	result.m[0][0] = scale.x;
-	result.m[1][1] = scale.y;
-	result.m[2][2] = scale.z;
-	result.m[3][3] = 1.0f;
+	result.m[3][0] = translate.x;
+	result.m[3][1] = translate.y;
+	result.m[3][2] = translate.z;
 
 	return result;
 }
@@ -150,103 +159,11 @@ Matrix4x4 MakeRotateZMatrix(float radian) {
 	return result;
 }
 
-Matrix4x4 MakeTranslateMatrix(const Vector3& translate) {
-	Matrix4x4 result = MakeIdentity4x4();
-
-	result.m[3][0] = translate.x;
-	result.m[3][1] = translate.y;
-	result.m[3][2] = translate.z;
-
-	return result;
-}
-
-Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translate) {
-	Matrix4x4 scaleMatrix = MakeScaleMatrix(scale);
-
-	Matrix4x4 rotateXMatrix = MakeRotateXMatrix(rotate.x);
-	Matrix4x4 rotateYMatrix = MakeRotateYMatrix(rotate.y);
-	Matrix4x4 rotateZMatrix = MakeRotateZMatrix(rotate.z);
-
-	Matrix4x4 rotateMatrix = Multiply(rotateXMatrix, Multiply(rotateYMatrix, rotateZMatrix));
-	Matrix4x4 translateMatrix = MakeTranslateMatrix(translate);
-
-	Matrix4x4 worldMatrix = Multiply(Multiply(scaleMatrix, rotateMatrix), translateMatrix);
-
-	return worldMatrix;
-}
-
-Matrix4x4 Inverse(const Matrix4x4& matrix) {
-	Matrix4x4 result{};
-	float buffer[4][8]{};
-
-	for (int row = 0; row < 4; ++row) {
-		for (int column = 0; column < 4; ++column) {
-			buffer[row][column] = matrix.m[row][column];
-		}
-
-		buffer[row][row + 4] = 1.0f;
-	}
-
-	for (int column = 0; column < 4; ++column) {
-		int pivot = column;
-		float pivotSize = std::fabs(buffer[column][column]);
-
-		for (int row = column + 1; row < 4; ++row) {
-			float size = std::fabs(buffer[row][column]);
-			if (size > pivotSize) {
-				pivot = row;
-				pivotSize = size;
-			}
-		}
-
-		assert(pivotSize != 0.0f);
-		if (pivotSize == 0.0f) {
-			return MakeIdentity4x4();
-		}
-
-		if (pivot != column) {
-			for (int i = 0; i < 8; ++i) {
-				float temp = buffer[column][i];
-				buffer[column][i] = buffer[pivot][i];
-				buffer[pivot][i] = temp;
-			}
-		}
-
-		float pivotValue = buffer[column][column];
-
-		for (int i = 0; i < 8; ++i) {
-			buffer[column][i] /= pivotValue;
-		}
-
-		for (int row = 0; row < 4; ++row) {
-			if (row == column) {
-				continue;
-			}
-
-			float scale = buffer[row][column];
-
-			for (int i = 0; i < 8; ++i) {
-				buffer[row][i] -= buffer[column][i] * scale;
-			}
-		}
-	}
-
-	for (int row = 0; row < 4; ++row) {
-		for (int column = 0; column < 4; ++column) {
-			result.m[row][column] = buffer[row][column + 4];
-		}
-	}
-
-	return result;
-}
-
 Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearClip, float farClip) {
 	Matrix4x4 result{};
 
-	float cot = 1.0f / std::tan(fovY / 2.0f);
-
-	result.m[0][0] = cot / aspectRatio;
-	result.m[1][1] = cot;
+	result.m[0][0] = 1.0f / aspectRatio / std::tan(fovY / 2.0f);
+	result.m[1][1] = 1.0f / std::tan(fovY / 2.0f);
 	result.m[2][2] = farClip / (farClip - nearClip);
 	result.m[2][3] = 1.0f;
 	result.m[3][2] = (-nearClip * farClip) / (farClip - nearClip);
@@ -268,32 +185,25 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
+Matrix4x4 MakeViewMatrix(const Camera& camera) {
+	Matrix4x4 translateMatrix = MakeTranslateMatrix({ -camera.translate.x, -camera.translate.y, -camera.translate.z });
+	Matrix4x4 rotateXMatrix = MakeRotateXMatrix(-camera.rotate.x);
+	Matrix4x4 rotateYMatrix = MakeRotateYMatrix(-camera.rotate.y);
+	Matrix4x4 rotateZMatrix = MakeRotateZMatrix(-camera.rotate.z);
+
+	Matrix4x4 rotateMatrix = Multiply(rotateZMatrix, Multiply(rotateYMatrix, rotateXMatrix));
+
+	return Multiply(translateMatrix, rotateMatrix);
+}
+
 Vector3 Transform(const Vector3& vector, const Matrix4x4& matrix) {
 	Vector3 result{};
 
-	result.x =
-		vector.x * matrix.m[0][0] +
-		vector.y * matrix.m[1][0] +
-		vector.z * matrix.m[2][0] +
-		1.0f * matrix.m[3][0];
+	result.x = vector.x * matrix.m[0][0] + vector.y * matrix.m[1][0] + vector.z * matrix.m[2][0] + matrix.m[3][0];
+	result.y = vector.x * matrix.m[0][1] + vector.y * matrix.m[1][1] + vector.z * matrix.m[2][1] + matrix.m[3][1];
+	result.z = vector.x * matrix.m[0][2] + vector.y * matrix.m[1][2] + vector.z * matrix.m[2][2] + matrix.m[3][2];
 
-	result.y =
-		vector.x * matrix.m[0][1] +
-		vector.y * matrix.m[1][1] +
-		vector.z * matrix.m[2][1] +
-		1.0f * matrix.m[3][1];
-
-	result.z =
-		vector.x * matrix.m[0][2] +
-		vector.y * matrix.m[1][2] +
-		vector.z * matrix.m[2][2] +
-		1.0f * matrix.m[3][2];
-
-	float w =
-		vector.x * matrix.m[0][3] +
-		vector.y * matrix.m[1][3] +
-		vector.z * matrix.m[2][3] +
-		1.0f * matrix.m[3][3];
+	float w = vector.x * matrix.m[0][3] + vector.y * matrix.m[1][3] + vector.z * matrix.m[2][3] + matrix.m[3][3];
 
 	if (w != 0.0f) {
 		result.x /= w;
@@ -315,17 +225,17 @@ void DrawLine3D(
 	Vector3 screenEnd = Transform(Transform(end, viewProjectionMatrix), viewportMatrix);
 
 	Novice::DrawLine(
-		static_cast<int>(screenStart.x),
-		static_cast<int>(screenStart.y),
-		static_cast<int>(screenEnd.x),
-		static_cast<int>(screenEnd.y),
+		int(screenStart.x),
+		int(screenStart.y),
+		int(screenEnd.x),
+		int(screenEnd.y),
 		color);
 }
 
 void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
-	const float kGridHalfWidth = 2.0f;        // Gridの半分の幅
-	const uint32_t kSubdivision = 10;        // 分割数
-	const float kGridEvery = (kGridHalfWidth * 2.0f) / float(kSubdivision); // 1つ分の長さ
+	const float kGridHalfWidth = 2.0f;
+	const uint32_t kSubdivision = 10;
+	const float kGridEvery = (kGridHalfWidth * 2.0f) / float(kSubdivision);
 
 	// 奥から手前への線を順々に引いていく
 	for (uint32_t xIndex = 0; xIndex <= kSubdivision; ++xIndex) {
@@ -334,13 +244,7 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 		Vector3 start{ x, 0.0f, -kGridHalfWidth };
 		Vector3 end{ x, 0.0f, kGridHalfWidth };
 
-		uint32_t color = 0xAAAAAAFF;
-
-		// 原点を通る線だけ少し濃くする
-		if (xIndex == kSubdivision / 2) {
-			color = 0x000000FF;
-		}
-
+		uint32_t color = (xIndex == kSubdivision / 2) ? kBlack : kGray;
 		DrawLine3D(start, end, viewProjectionMatrix, viewportMatrix, color);
 	}
 
@@ -351,13 +255,7 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 		Vector3 start{ -kGridHalfWidth, 0.0f, z };
 		Vector3 end{ kGridHalfWidth, 0.0f, z };
 
-		uint32_t color = 0xAAAAAAFF;
-
-		// 原点を通る線だけ少し濃くする
-		if (zIndex == kSubdivision / 2) {
-			color = 0x000000FF;
-		}
-
+		uint32_t color = (zIndex == kSubdivision / 2) ? kBlack : kGray;
 		DrawLine3D(start, end, viewProjectionMatrix, viewportMatrix, color);
 	}
 }
@@ -368,9 +266,9 @@ void DrawSphere(
 	const Matrix4x4& viewportMatrix,
 	uint32_t color) {
 
-	const uint32_t kSubdivision = 16;             // 分割数
-	const float kLonEvery = 2.0f * kPi / float(kSubdivision); // 経度分割1つ分の角度
-	const float kLatEvery = kPi / float(kSubdivision);        // 緯度分割1つ分の角度
+	const uint32_t kSubdivision = 16;
+	const float kLonEvery = 2.0f * kPi / float(kSubdivision);
+	const float kLatEvery = kPi / float(kSubdivision);
 
 	// 緯度の方向に分割 -π/2 ～ π/2
 	for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex) {
@@ -380,21 +278,18 @@ void DrawSphere(
 		for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {
 			float lon = kLonEvery * float(lonIndex);
 
-			// 現在の点
 			Vector3 a{
 				sphere.center.x + sphere.radius * std::cos(lat) * std::cos(lon),
 				sphere.center.y + sphere.radius * std::sin(lat),
 				sphere.center.z + sphere.radius * std::cos(lat) * std::sin(lon)
 			};
 
-			// 緯度方向に1つ進んだ点
 			Vector3 b{
 				sphere.center.x + sphere.radius * std::cos(lat + kLatEvery) * std::cos(lon),
 				sphere.center.y + sphere.radius * std::sin(lat + kLatEvery),
 				sphere.center.z + sphere.radius * std::cos(lat + kLatEvery) * std::sin(lon)
 			};
 
-			// 経度方向に1つ進んだ点
 			Vector3 c{
 				sphere.center.x + sphere.radius * std::cos(lat) * std::cos(lon + kLonEvery),
 				sphere.center.y + sphere.radius * std::sin(lat),
@@ -407,7 +302,36 @@ void DrawSphere(
 	}
 }
 
-// Windowsアプリでのエントリーポイント(main関数)
+void DrawCircleXZ(
+	const Vector3& center,
+	float radius,
+	const Matrix4x4& viewProjectionMatrix,
+	const Matrix4x4& viewportMatrix,
+	uint32_t color) {
+
+	const uint32_t kSubdivision = 64;
+	const float kEvery = 2.0f * kPi / float(kSubdivision);
+
+	for (uint32_t index = 0; index < kSubdivision; ++index) {
+		float theta1 = kEvery * float(index);
+		float theta2 = kEvery * float(index + 1);
+
+		Vector3 p1{
+			center.x + std::cos(theta1) * radius,
+			center.y,
+			center.z - std::sin(theta1) * radius
+		};
+
+		Vector3 p2{
+			center.x + std::cos(theta2) * radius,
+			center.y,
+			center.z - std::sin(theta2) * radius
+		};
+
+		DrawLine3D(p1, p2, viewProjectionMatrix, viewportMatrix, color);
+	}
+}
+
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// ライブラリの初期化
@@ -417,20 +341,29 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	char keys[256] = { 0 };
 	char preKeys[256] = { 0 };
 
-	Vector3 cameraTranslate{ 0.0f, 1.9f, -6.49f };
-	Vector3 cameraRotate{ 0.26f, 0.0f, 0.0f };
+	Camera camera{};
+	camera.translate = { 0.0f, 1.9f, -6.49f };
+	camera.rotate = { 0.26f, 0.0f, 0.0f };
 
-	Pendulum pendulum{};
-	pendulum.anchor = { 0.0f, 1.0f, 0.0f };
-	pendulum.length = 0.8f;
-	pendulum.angle = 0.7f;
-	pendulum.angularVelocity = 0.0f;
-	pendulum.angularAcceleration = 0.0f;
+	ConicalPendulum conicalPendulum{};
+	conicalPendulum.anchor = { 0.0f, 1.0f, 0.0f };
+	conicalPendulum.length = 0.8f;
+	conicalPendulum.halfApexAngle = 0.7f;
+	conicalPendulum.angle = 0.0f;
+	conicalPendulum.angularVelocity = 0.0f;
 
-	Sphere pendulumSphere{};
-	pendulumSphere.radius = 0.05f;
+	Sphere bob{};
+	bob.center = { 0.0f, 0.0f, 0.0f };
+	bob.radius = 0.05f;
 
-	bool isMove = false;
+	Sphere anchorSphere{};
+	anchorSphere.center = conicalPendulum.anchor;
+	anchorSphere.radius = 0.025f;
+
+	bool isStart = false;
+
+	const float kDeltaTime = 1.0f / 60.0f;
+	const float kGravity = 9.8f;
 
 	// ウィンドウの×ボタンが押されるまでループ
 	while (Novice::ProcessMessage() == 0) {
@@ -445,89 +378,65 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		/// ↓更新処理ここから
 		///
 
-		const float deltaTime = 1.0f / 60.0f;
-		const float gravityAcceleration = 9.8f;
-
 		ImGui::Begin("Window");
 
-		// Startボタンで動かし始める
 		if (ImGui::Button("Start")) {
-			isMove = true;
+			isStart = true;
 		}
 
-		ImGui::SameLine();
+		ImGui::DragFloat3("CameraTranslate", &camera.translate.x, 0.01f);
+		ImGui::DragFloat3("CameraRotate", &camera.rotate.x, 0.01f);
 
-		// Resetボタンで初期状態に戻す
-		if (ImGui::Button("Reset")) {
-			isMove = false;
-			pendulum.anchor = { 0.0f, 1.0f, 0.0f };
-			pendulum.length = 0.8f;
-			pendulum.angle = 0.7f;
-			pendulum.angularVelocity = 0.0f;
-			pendulum.angularAcceleration = 0.0f;
-		}
+		ImGui::DragFloat3("Anchor", &conicalPendulum.anchor.x, 0.01f);
+		ImGui::DragFloat("Length", &conicalPendulum.length, 0.01f);
+		ImGui::DragFloat("HalfApexAngle", &conicalPendulum.halfApexAngle, 0.01f);
+		ImGui::DragFloat("Angle", &conicalPendulum.angle, 0.01f);
 
-		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
-		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-
-		ImGui::DragFloat3("Pendulum.Anchor", &pendulum.anchor.x, 0.01f);
-		ImGui::DragFloat("Pendulum.Length", &pendulum.length, 0.01f);
-		ImGui::DragFloat("Pendulum.Angle", &pendulum.angle, 0.01f);
-		ImGui::DragFloat("Pendulum.AngularVelocity", &pendulum.angularVelocity, 0.01f);
-		ImGui::Text("AngularAcceleration : %.3f", pendulum.angularAcceleration);
+		ImGui::Text("AngularVelocity : %.3f", conicalPendulum.angularVelocity);
 
 		ImGui::End();
 
-		// Spaceキーで動かし始める
-		if (preKeys[DIK_SPACE] == 0 && keys[DIK_SPACE] != 0) {
-			isMove = true;
+		// 値が壊れないように最低限補正しておく
+		if (conicalPendulum.length < 0.01f) {
+			conicalPendulum.length = 0.01f;
 		}
 
-		// Rキーで初期状態に戻す
-		if (preKeys[DIK_R] == 0 && keys[DIK_R] != 0) {
-			isMove = false;
-			pendulum.anchor = { 0.0f, 1.0f, 0.0f };
-			pendulum.length = 0.8f;
-			pendulum.angle = 0.7f;
-			pendulum.angularVelocity = 0.0f;
-			pendulum.angularAcceleration = 0.0f;
+		if (conicalPendulum.halfApexAngle < 0.01f) {
+			conicalPendulum.halfApexAngle = 0.01f;
 		}
 
-		// 紐の長さが0にならないようにする
-		if (pendulum.length <= 0.01f) {
-			pendulum.length = 0.01f;
+		if (conicalPendulum.halfApexAngle > 1.4f) {
+			conicalPendulum.halfApexAngle = 1.4f;
 		}
 
-		// 振り子の角度を更新する
-		if (isMove) {
-			pendulum.angularAcceleration =
-				-(gravityAcceleration / pendulum.length) * std::sin(pendulum.angle);
+		if (isStart) {
+			// 円錐振り子の角速度を求める
+			conicalPendulum.angularVelocity =
+				std::sqrt(kGravity / (conicalPendulum.length * std::cos(conicalPendulum.halfApexAngle)));
 
-			pendulum.angularVelocity += pendulum.angularAcceleration * deltaTime;
-			pendulum.angle += pendulum.angularVelocity * deltaTime;
+			// 角度を進める
+			conicalPendulum.angle += conicalPendulum.angularVelocity * kDeltaTime;
+
+			if (conicalPendulum.angle >= 2.0f * kPi) {
+				conicalPendulum.angle -= 2.0f * kPi;
+			}
 		}
 
-		// 振り子の先端位置を求める
-		pendulumSphere.center.x = pendulum.anchor.x + std::sin(pendulum.angle) * pendulum.length;
-		pendulumSphere.center.y = pendulum.anchor.y - std::cos(pendulum.angle) * pendulum.length;
-		pendulumSphere.center.z = pendulum.anchor.z;
+		// 半径と高さを求める
+		float radius = std::sin(conicalPendulum.halfApexAngle) * conicalPendulum.length;
+		float height = std::cos(conicalPendulum.halfApexAngle) * conicalPendulum.length;
 
-		Matrix4x4 cameraMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, cameraRotate, cameraTranslate);
-		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
-		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(
-			0.45f,
-			float(kWindowWidth) / float(kWindowHeight),
-			0.1f,
-			100.0f);
+		// ボブの位置を求める
+		bob.center.x = conicalPendulum.anchor.x + std::cos(conicalPendulum.angle) * radius;
+		bob.center.y = conicalPendulum.anchor.y - height;
+		bob.center.z = conicalPendulum.anchor.z - std::sin(conicalPendulum.angle) * radius;
 
+		anchorSphere.center = conicalPendulum.anchor;
+
+		Matrix4x4 viewMatrix = MakeViewMatrix(camera);
+		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
 		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
-		Matrix4x4 viewportMatrix = MakeViewportMatrix(
-			0.0f,
-			0.0f,
-			float(kWindowWidth),
-			float(kWindowHeight),
-			0.0f,
-			1.0f);
+		Matrix4x4 viewportMatrix = MakeViewportMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
 
 		///
 		/// ↑更新処理ここまで
@@ -537,23 +446,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		/// ↓描画処理ここから
 		///
 
-		// Gridを描画
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		// アンカーを描画
-		Sphere anchorSphere{ pendulum.anchor, 0.025f };
-		DrawSphere(anchorSphere, viewProjectionMatrix, viewportMatrix, 0x000000FF);
+		// 円運動の軌道を描画
+		Vector3 circleCenter{
+			conicalPendulum.anchor.x,
+			conicalPendulum.anchor.y - height,
+			conicalPendulum.anchor.z
+		};
+		DrawCircleXZ(circleCenter, radius, viewProjectionMatrix, viewportMatrix, kGray);
 
-		// 紐を描画
-		DrawLine3D(
-			pendulum.anchor,
-			pendulumSphere.center,
-			viewProjectionMatrix,
-			viewportMatrix,
-			0xFFFFFFFF);
+		// アンカーとボブを結ぶ線を描画
+		DrawLine3D(conicalPendulum.anchor, bob.center, viewProjectionMatrix, viewportMatrix, kWhite);
 
-		// 振り子の先端を描画
-		DrawSphere(pendulumSphere, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
+		// アンカーとボブを描画
+		DrawSphere(anchorSphere, viewProjectionMatrix, viewportMatrix, kRed);
+		DrawSphere(bob, viewProjectionMatrix, viewportMatrix, kWhite);
 
 		///
 		/// ↑描画処理ここまで
